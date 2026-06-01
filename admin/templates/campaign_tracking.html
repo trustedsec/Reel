@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+
+{% block title %}Tracking - {{ campaign.name }} - Reel v2 Admin{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <div>
+                            <a href="{{ url_for('admin.campaigns') }}" class="text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sr-only">Campaigns</span>
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <a href="{{ url_for('admin.campaign_detail', campaign_id=campaign.id) }}" class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                {{ campaign.name }}
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <span class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400">Tracking</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="mt-2 text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                Tracking Dashboard
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Manage tracking links, monitor events, and analyze campaign performance
+            </p>
+        </div>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-users text-gray-400 dark:text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Tracked Users</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white" id="tracked-users-count">-</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-eye text-gray-400 dark:text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Page Visits</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white" id="page-visits-count">-</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-mouse-pointer text-gray-400 dark:text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Button Clicks</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white" id="button-clicks-count">-</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-paper-plane text-gray-400 dark:text-gray-500 text-xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Form Submissions</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white" id="form-submissions-count">-</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Quick Actions</h3>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <a href="{{ url_for('admin.tracking_users', campaign_id=campaign.id) }}" 
+                   class="relative block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-6 py-4 hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-users text-blue-500 text-xl"></i>
+                        </div>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white">Manage Users</h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Add and manage tracked users</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('admin.tracking_links', campaign_id=campaign.id) }}" 
+                   class="relative block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-6 py-4 hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-link text-green-500 text-xl"></i>
+                        </div>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white">Generate Links</h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Create tracking links for emails</p>
+                        </div>
+                    </div>
+                </a>
+
+                <a href="{{ url_for('admin.tracking_events', campaign_id=campaign.id) }}" 
+                   class="relative block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-6 py-4 hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-chart-line text-purple-500 text-xl"></i>
+                        </div>
+                        <div class="ml-3">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white">View Events</h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Monitor tracking events</p>
+                        </div>
+                    </div>
+                </a>
+
+                <button onclick="exportTrackingData()" 
+                        class="relative block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg px-6 py-4 hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors duration-200">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <i class="fas fa-download text-orange-500 text-xl"></i>
+                        </div>
+                        <div class="ml-3 text-left">
+                            <h4 class="text-sm font-medium text-gray-900 dark:text-white">Export Data</h4>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">Download tracking reports</p>
+                        </div>
+                    </div>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Events -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="sm:flex sm:items-center sm:justify-between">
+                <div>
+                    <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">Recent Events</h3>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Latest tracking events from this campaign</p>
+                </div>
+                <div class="mt-4 sm:mt-0">
+                    <button onclick="refreshEvents()" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                        <i class="fas fa-sync-alt mr-2"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <div class="flow-root">
+                    <ul id="recent-events" class="-mb-8">
+                        <li class="text-center py-8 text-gray-500 dark:text-gray-400">
+                            <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                            <p>Loading events...</p>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="mt-6">
+                <a href="{{ url_for('admin.tracking_events', campaign_id=campaign.id) }}" 
+                   class="w-full flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 transition-colors duration-200">
+                    View All Events
+                    <i class="fas fa-arrow-right ml-2"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CAMPAIGN_ID = {{ campaign.id }};
+
+function loadStats() {
+    Promise.all([
+        fetch(`/api/campaigns/${CAMPAIGN_ID}/tracking/users`).then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        }).catch(error => {
+            // Check if error is due to ad blocker (ERR_BLOCKED_BY_CLIENT)
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                console.warn('Request blocked - likely by ad blocker. Please disable ad blocker for this site.');
+                return { pagination: { total: 0 }, error: 'blocked' };
+            }
+            throw error;
+        }),
+        fetch(`/api/campaigns/${CAMPAIGN_ID}/tracking/events?per_page=1000`).then(r => {
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            return r.json();
+        }).catch(error => {
+            // Check if error is due to ad blocker (ERR_BLOCKED_BY_CLIENT)
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                console.warn('Request blocked - likely by ad blocker. Please disable ad blocker for this site.');
+                return { events: [], error: 'blocked' };
+            }
+            throw error;
+        })
+    ]).then(([usersData, eventsData]) => {
+        // Check for blocked requests
+        if (usersData.error === 'blocked' || eventsData.error === 'blocked') {
+            // Show user-friendly message
+            const statsCards = document.querySelectorAll('[id$="-count"]');
+            statsCards.forEach(card => {
+                if (card.textContent === '-') {
+                    card.textContent = '?';
+                    card.title = 'Data unavailable - ad blocker may be blocking requests';
+                }
+            });
+            return;
+        }
+        
+        // Update user count
+        document.getElementById('tracked-users-count').textContent = 
+            usersData.pagination ? usersData.pagination.total : '0';
+        
+        // Count event types
+        if (eventsData.events && Array.isArray(eventsData.events)) {
+            const eventCounts = eventsData.events.reduce((counts, event) => {
+                counts[event.event_type] = (counts[event.event_type] || 0) + 1;
+                return counts;
+            }, {});
+            
+            document.getElementById('page-visits-count').textContent = 
+                (eventCounts['page_visited'] || 0) + (eventCounts['email_opened'] || 0);
+            document.getElementById('button-clicks-count').textContent = 
+                eventCounts['button_clicked'] || '0';
+            document.getElementById('form-submissions-count').textContent = 
+                (eventCounts['form_submitted'] || 0) + (eventCounts['form_submit'] || 0);
+        } else {
+            // No events or invalid response
+            document.getElementById('page-visits-count').textContent = '0';
+            document.getElementById('button-clicks-count').textContent = '0';
+            document.getElementById('form-submissions-count').textContent = '0';
+        }
+    }).catch(error => {
+        console.error('Error loading stats:', error);
+        // Set all stats to '?' on error
+        document.getElementById('tracked-users-count').textContent = '?';
+        document.getElementById('page-visits-count').textContent = '?';
+        document.getElementById('button-clicks-count').textContent = '?';
+        document.getElementById('form-submissions-count').textContent = '?';
+    });
+}
+
+function loadRecentEvents() {
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/tracking/events?per_page=10`)
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            const eventsList = document.getElementById('recent-events');
+            eventsList.replaceChildren();
+
+            if (!data.events || data.events.length === 0) {
+                const empty = document.createElement('li');
+                empty.className = 'text-center py-8 text-gray-500 dark:text-gray-400';
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-inbox text-xl mb-2';
+                const msg = document.createElement('p');
+                msg.textContent = 'No events yet';
+                empty.append(icon, msg);
+                eventsList.appendChild(empty);
+                return;
+            }
+
+            data.events.forEach((event, index) => {
+                const isLast = index === data.events.length - 1;
+                const eventIcon = getEventIcon(event.event_type);
+                const eventColor = getEventColor(event.event_type);
+                const eventTime = new Date(event.created_at).toLocaleString();
+
+                const li = document.createElement('li');
+                const wrap = document.createElement('div');
+                wrap.className = 'relative pb-8';
+
+                if (!isLast) {
+                    const rail = document.createElement('span');
+                    rail.className = 'absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700';
+                    rail.setAttribute('aria-hidden', 'true');
+                    wrap.appendChild(rail);
+                }
+
+                const row = document.createElement('div');
+                row.className = 'relative flex space-x-3';
+
+                const iconWrap = document.createElement('div');
+                const iconBadge = document.createElement('span');
+                iconBadge.className = `h-8 w-8 rounded-full ${eventColor} flex items-center justify-center ring-8 ring-white dark:ring-gray-800`;
+                const iconEl = document.createElement('i');
+                iconEl.className = `fas ${eventIcon} text-white text-xs`;
+                iconBadge.appendChild(iconEl);
+                iconWrap.appendChild(iconBadge);
+
+                const body = document.createElement('div');
+                body.className = 'min-w-0 flex-1 pt-1.5 flex justify-between space-x-4';
+
+                const leftCol = document.createElement('div');
+                const summary = document.createElement('p');
+                summary.className = 'text-sm text-gray-500 dark:text-gray-400';
+                const who = document.createElement('strong');
+                who.textContent = event.user ? event.user.email : 'Unknown';
+                summary.appendChild(who);
+                summary.appendChild(document.createTextNode(' ' + getEventDescription(event.event_type)));
+                leftCol.appendChild(summary);
+
+                if (event.additional_data && event.additional_data.target_url) {
+                    const targetLine = document.createElement('p');
+                    targetLine.className = 'text-xs text-gray-400 dark:text-gray-500 mt-1';
+                    targetLine.appendChild(document.createTextNode('Target: '));
+                    const targetSpan = document.createElement('span');
+                    targetSpan.textContent = event.additional_data.target_url;
+                    targetLine.appendChild(targetSpan);
+                    leftCol.appendChild(targetLine);
+                }
+
+                const rightCol = document.createElement('div');
+                rightCol.className = 'text-right text-sm whitespace-nowrap text-gray-500 dark:text-gray-400';
+                const time = document.createElement('time');
+                time.setAttribute('datetime', event.created_at);
+                time.textContent = eventTime;
+                rightCol.appendChild(time);
+
+                body.append(leftCol, rightCol);
+                row.append(iconWrap, body);
+                wrap.appendChild(row);
+                li.appendChild(wrap);
+                eventsList.appendChild(li);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading events:', error);
+            const eventsList = document.getElementById('recent-events');
+            let errorMessage = 'Error loading events';
+            let errorIcon = 'fa-exclamation-triangle';
+            
+            // Check if error is due to ad blocker
+            if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+                errorMessage = 'Request blocked by ad blocker. Please disable ad blocker for this site.';
+                errorIcon = 'fa-shield-alt';
+            }
+            
+            eventsList.innerHTML = `
+                <li class="text-center py-8 text-red-500 dark:text-red-400">
+                    <i class="fas ${errorIcon} text-xl mb-2"></i>
+                    <p>${errorMessage}</p>
+                </li>
+            `;
+        });
+}
+
+function getEventIcon(eventType) {
+    const icons = {
+        'page_visited': 'fa-eye',
+        'email_opened': 'fa-envelope-open',
+        'button_clicked': 'fa-mouse-pointer',
+        'form_submitted': 'fa-paper-plane',
+        'form_submit': 'fa-paper-plane',
+        'link_clicked': 'fa-external-link-alt'
+    };
+    return icons[eventType] || 'fa-circle';
+}
+
+function getEventColor(eventType) {
+    const colors = {
+        'page_visited': 'bg-blue-500',
+        'email_opened': 'bg-green-500',
+        'button_clicked': 'bg-purple-500',
+        'form_submitted': 'bg-red-500',
+        'form_submit': 'bg-red-500',
+        'link_clicked': 'bg-yellow-500'
+    };
+    return colors[eventType] || 'bg-gray-500';
+}
+
+function getEventDescription(eventType) {
+    const descriptions = {
+        'page_visited': 'visited the campaign page',
+        'email_opened': 'opened the email',
+        'button_clicked': 'clicked a tracked button',
+        'form_submitted': 'submitted the form',
+        'form_submit': 'submitted the form',
+        'link_clicked': 'clicked a tracked link'
+    };
+    return descriptions[eventType] || `triggered ${eventType}`;
+}
+
+function refreshEvents() {
+    loadRecentEvents();
+    loadStats();
+}
+
+function exportTrackingData() {
+    window.open(`/api/campaigns/${CAMPAIGN_ID}/tracking/events?format=csv&per_page=10000`, '_blank');
+}
+
+// Load data on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats();
+    loadRecentEvents();
+    
+    // Auto-refresh every 30 seconds
+    setInterval(refreshEvents, 30000);
+});
+</script>
+{% endblock %}

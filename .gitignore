@@ -1,0 +1,47 @@
+*.pyc
+__pycache__/
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+*.log
+.git/
+.mypy_cache/
+.DS_Store
+
+# Application specific
+.env
+*.db
+instance/
+Caddyfile.test
+# Storage (runtime and generated; keep dir structure via .gitkeep)
+storage/uploads/*
+storage/templates/*
+storage/assets/*
+storage/backups/
+storage/caddy/
+storage/temp/
+storage/template_previews/
+storage/cache/
+storage/campaigns/*
+storage/plugins/*
+!storage/uploads/.gitkeep
+!storage/templates/.gitkeep
+!storage/assets/.gitkeep
+!storage/backups/.gitkeep
+!storage/caddy/.gitkeep
+!storage/temp/.gitkeep
+!storage/template_previews/.gitkeep
+!storage/campaigns/.gitkeep
+!storage/plugins/.gitkeep
+logs/
+
+# Coverage
+.coverage
+coverage.xml
+htmlcov/

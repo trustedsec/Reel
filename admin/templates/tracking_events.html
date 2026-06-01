@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+
+{% block title %}Tracking Events - {{ campaign.name }} - Reel v2 Admin{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <div>
+                            <a href="{{ url_for('admin.campaigns') }}" class="text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sr-only">Campaigns</span>
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <a href="{{ url_for('admin.campaign_detail', campaign_id=campaign.id) }}" class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                {{ campaign.name }}
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <a href="{{ url_for('admin.campaign_tracking', campaign_id=campaign.id) }}" class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                Tracking
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <span class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400">Tracking Events</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="mt-2 text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                All Tracking Events
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Full list of tracking events for this campaign
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4 space-x-2">
+            <a href="{{ url_for('admin.campaign_tracking', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Back to Tracking
+            </a>
+        </div>
+    </div>
+
+    <!-- Events list -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden transition-colors duration-200">
+        <div class="px-4 py-4 sm:px-6 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Events</h3>
+                <button type="button" onclick="refreshEvents()" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                    <i class="fas fa-sync-alt mr-2"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+        <div class="px-4 py-4 sm:px-6">
+            <div class="flow-root">
+                <ul id="events-list" class="-mb-8">
+                    <li class="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                        <p>Loading events...</p>
+                    </li>
+                </ul>
+            </div>
+            <div id="pagination" class="mt-6 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4 hidden">
+                <div class="text-sm text-gray-500 dark:text-gray-400" id="pagination-info"></div>
+                <div class="flex space-x-2">
+                    <button type="button" id="btn-prev" onclick="goToPage(currentPage - 1)" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-chevron-left mr-1"></i> Previous
+                    </button>
+                    <button type="button" id="btn-next" onclick="goToPage(currentPage + 1)" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Next <i class="fas fa-chevron-right ml-1"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CAMPAIGN_ID = {{ campaign.id }};
+const PER_PAGE = 50;
+let currentPage = 1;
+let totalPages = 1;
+
+function getEventIcon(eventType) {
+    const icons = {
+        'page_visited': 'fa-eye',
+        'email_opened': 'fa-envelope-open',
+        'button_clicked': 'fa-mouse-pointer',
+        'form_submitted': 'fa-paper-plane',
+        'form_submit': 'fa-paper-plane',
+        'link_clicked': 'fa-external-link-alt'
+    };
+    return icons[eventType] || 'fa-circle';
+}
+
+function getEventColor(eventType) {
+    const colors = {
+        'page_visited': 'bg-blue-500',
+        'email_opened': 'bg-green-500',
+        'button_clicked': 'bg-purple-500',
+        'form_submitted': 'bg-red-500',
+        'form_submit': 'bg-red-500',
+        'link_clicked': 'bg-yellow-500'
+    };
+    return colors[eventType] || 'bg-gray-500';
+}
+
+function getEventDescription(eventType) {
+    const descriptions = {
+        'page_visited': 'visited the campaign page',
+        'email_opened': 'opened the email',
+        'button_clicked': 'clicked a tracked button',
+        'form_submitted': 'submitted the form',
+        'form_submit': 'submitted the form',
+        'link_clicked': 'clicked a tracked link'
+    };
+    return descriptions[eventType] || `triggered ${eventType}`;
+}
+
+function buildEventsUrl(page) {
+    const params = new URLSearchParams(window.location.search);
+    const url = new URL(`/api/campaigns/${CAMPAIGN_ID}/tracking/events`, window.location.origin);
+    url.searchParams.set('page', page);
+    url.searchParams.set('per_page', PER_PAGE);
+    const trackingId = params.get('tracking_id');
+    if (trackingId) url.searchParams.set('tracking_id', trackingId);
+    return url.toString();
+}
+
+function renderEvents(events, pagination) {
+    const listEl = document.getElementById('events-list');
+    listEl.replaceChildren();
+
+    if (!events || events.length === 0) {
+        const empty = document.createElement('li');
+        empty.className = 'text-center py-8 text-gray-500 dark:text-gray-400';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-inbox text-xl mb-2';
+        const msg = document.createElement('p');
+        msg.textContent = 'No events yet';
+        empty.append(icon, msg);
+        listEl.appendChild(empty);
+        return;
+    }
+
+    events.forEach((event, index) => {
+        const isLast = index === events.length - 1;
+        const eventIcon = getEventIcon(event.event_type);
+        const eventColor = getEventColor(event.event_type);
+        const eventTime = new Date(event.created_at).toLocaleString();
+
+        const li = document.createElement('li');
+
+        const wrap = document.createElement('div');
+        wrap.className = 'relative pb-8';
+
+        if (!isLast) {
+            const rail = document.createElement('span');
+            rail.className = 'absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700';
+            rail.setAttribute('aria-hidden', 'true');
+            wrap.appendChild(rail);
+        }
+
+        const row = document.createElement('div');
+        row.className = 'relative flex space-x-3';
+
+        const iconWrap = document.createElement('div');
+        const iconBadge = document.createElement('span');
+        iconBadge.className = `h-8 w-8 rounded-full ${eventColor} flex items-center justify-center ring-8 ring-white dark:ring-gray-800`;
+        const iconEl = document.createElement('i');
+        iconEl.className = `fas ${eventIcon} text-white text-xs`;
+        iconBadge.appendChild(iconEl);
+        iconWrap.appendChild(iconBadge);
+
+        const body = document.createElement('div');
+        body.className = 'min-w-0 flex-1 pt-1.5 flex justify-between space-x-4';
+
+        const leftCol = document.createElement('div');
+        const summary = document.createElement('p');
+        summary.className = 'text-sm text-gray-500 dark:text-gray-400';
+        const who = document.createElement('strong');
+        who.textContent = event.user ? event.user.email : 'Unknown';
+        summary.appendChild(who);
+        summary.appendChild(document.createTextNode(' ' + getEventDescription(event.event_type)));
+        leftCol.appendChild(summary);
+
+        if (event.additional_data && event.additional_data.target_url) {
+            const targetLine = document.createElement('p');
+            targetLine.className = 'text-xs text-gray-400 dark:text-gray-500 mt-1';
+            targetLine.appendChild(document.createTextNode('Target: '));
+            const targetSpan = document.createElement('span');
+            targetSpan.textContent = event.additional_data.target_url;
+            targetLine.appendChild(targetSpan);
+            leftCol.appendChild(targetLine);
+        }
+
+        const rightCol = document.createElement('div');
+        rightCol.className = 'text-right text-sm whitespace-nowrap text-gray-500 dark:text-gray-400';
+        const time = document.createElement('time');
+        time.setAttribute('datetime', event.created_at);
+        time.textContent = eventTime;
+        rightCol.appendChild(time);
+
+        body.append(leftCol, rightCol);
+        row.append(iconWrap, body);
+        wrap.appendChild(row);
+        li.appendChild(wrap);
+        listEl.appendChild(li);
+    });
+}
+
+function updatePagination(pagination) {
+    if (!pagination || pagination.pages <= 1) {
+        document.getElementById('pagination').classList.add('hidden');
+        return;
+    }
+    totalPages = pagination.pages;
+    document.getElementById('pagination').classList.remove('hidden');
+    const total = pagination.total;
+    const from = (currentPage - 1) * PER_PAGE + 1;
+    const to = Math.min(currentPage * PER_PAGE, total);
+    document.getElementById('pagination-info').textContent = `Showing ${from}-${to} of ${total}`;
+    document.getElementById('btn-prev').disabled = currentPage <= 1;
+    document.getElementById('btn-next').disabled = currentPage >= totalPages;
+}
+
+function goToPage(page) {
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    loadEvents();
+}
+
+function loadEvents() {
+    const listEl = document.getElementById('events-list');
+    listEl.innerHTML = `
+        <li class="text-center py-8 text-gray-500 dark:text-gray-400">
+            <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+            <p>Loading events...</p>
+        </li>
+    `;
+    fetch(buildEventsUrl(currentPage))
+        .then(response => {
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            return response.json();
+        })
+        .then(data => {
+            renderEvents(data.events || [], data.pagination || {});
+            updatePagination(data.pagination);
+        })
+        .catch(error => {
+            console.error('Error loading events:', error);
+            listEl.innerHTML = `
+                <li class="text-center py-8 text-red-500 dark:text-red-400">
+                    <i class="fas fa-exclamation-triangle text-xl mb-2"></i>
+                    <p>Error loading events</p>
+                </li>
+            `;
+        });
+}
+
+function refreshEvents() {
+    loadEvents();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadEvents();
+});
+</script>
+{% endblock %}

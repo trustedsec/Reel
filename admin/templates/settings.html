@@ -1,0 +1,611 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Reel v2 Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+.setting-card {
+    @apply bg-white dark:bg-gray-800 shadow rounded-lg p-6 transition-colors duration-200;
+}
+.setting-group {
+    @apply space-y-4;
+}
+.setting-item {
+    @apply flex items-center justify-between py-3 border-b border-gray-200 dark:border-gray-700 last:border-b-0;
+}
+.status-indicator {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+.status-success {
+    @apply bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300;
+}
+.status-warning {
+    @apply bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300;
+}
+.status-error {
+    @apply bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300;
+}
+.status-info {
+    @apply bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300;
+}
+.settings-tabs {
+    @apply border-b border-gray-200 dark:border-gray-700;
+}
+.tab-button {
+    @apply px-4 py-2 font-medium text-sm border-b-2 border-transparent text-gray-900 dark:text-white hover:text-gray-700 dark:hover:text-gray-200 hover:border-gray-300 dark:hover:border-gray-600 transition-colors duration-200;
+}
+.tab-button.active {
+    @apply text-blue-600 dark:text-blue-400 border-blue-600 dark:border-blue-400;
+}
+.setting-input {
+    @apply mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm;
+}
+.setting-checkbox {
+    @apply focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700;
+}
+.edit-mode {
+    @apply bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-400 pl-4;
+}
+/* Explicit dark mode overrides (CDN may not compile @apply dark:) */
+.dark .tab-button,
+.dark .tab-button i {
+    color: #f9fafb;
+}
+.dark .tab-button:hover,
+.dark .tab-button:hover i {
+    color: #e5e7eb;
+}
+.dark .tab-button.active,
+.dark .tab-button.active i {
+    color: #60a5fa;
+}
+.dark .setting-card h3,
+.dark .setting-card h3 i {
+    color: #fff;
+}
+.dark .setting-item dt {
+    color: #f3f4f6;
+}
+.dark .setting-item .status-indicator.status-info,
+.dark .setting-item .status-indicator.status-info i {
+    color: #93c5fd;
+}
+.dark .setting-item .status-indicator:not(.status-info) {
+    color: #f3f4f6;
+}
+.dark .setting-item dd,
+.dark .setting-item .text-sm.font-mono {
+    color: #d1d5db;
+}
+.dark .setting-item button,
+.dark .setting-item button i {
+    color: #f3f4f6;
+}
+.dark .setting-item button.text-blue-600,
+.dark .setting-item button.text-blue-600 i {
+    color: #93c5fd;
+}
+.dark .setting-item button.text-red-600,
+.dark .setting-item button.text-red-600 i {
+    color: #f87171;
+}
+.dark #category-tabs .tab-button,
+.dark #category-tabs .tab-button i {
+    color: #f9fafb;
+}
+.dark #category-tabs .tab-button.active,
+.dark #category-tabs .tab-button.active i {
+    color: #60a5fa;
+}
+.dark .settings-header-actions button,
+.dark .settings-header-actions button i {
+    color: #f9fafb;
+}
+.dark .settings-header-actions button.text-red-700,
+.dark .settings-header-actions button.text-red-700 i {
+    color: #fecaca;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                System Settings
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Manage Reel v2 configuration - Settings update instantly without restart
+            </p>
+        </div>
+        <div class="settings-header-actions mt-4 flex space-x-2 md:mt-0 md:ml-4">
+            <button onclick="importEnvSettings()" class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-900 dark:text-white bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-upload mr-2 text-gray-900 dark:text-white"></i>
+                Import .env
+            </button>
+            <button onclick="resetAllSettings()" class="inline-flex items-center px-3 py-2 border border-red-300 dark:border-red-600 rounded-md shadow-sm text-sm font-medium text-red-700 dark:text-red-200 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-200">
+                <i class="fas fa-undo mr-2 text-gray-900 dark:text-white"></i>
+                Reset All
+            </button>
+            <button onclick="loadSettings()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-900 dark:text-white bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-sync-alt mr-2 text-gray-900 dark:text-white"></i>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    <!-- Loading State -->
+    <div id="loading-state" class="text-center py-12">
+        <i class="fas fa-spinner fa-spin text-4xl text-gray-400 dark:text-gray-500 mb-4"></i>
+        <p class="text-lg text-gray-500 dark:text-gray-400">Loading settings...</p>
+    </div>
+
+    <!-- Settings Content -->
+    <div id="settings-content" class="hidden">
+        
+        <!-- Category Tabs -->
+        <div class="settings-tabs">
+            <nav class="-mb-px flex space-x-8" id="category-tabs">
+                <!-- Tabs will be populated dynamically -->
+            </nav>
+        </div>
+
+        <!-- Settings Categories -->
+        <div id="settings-categories" class="mt-6">
+            <!-- Categories will be populated dynamically -->
+        </div>
+    </div>
+
+    <!-- Success/Error Messages -->
+    <div id="message-container" class="fixed top-4 right-4 z-50 space-y-2"></div>
+</div>
+
+<!-- Edit Setting Modal -->
+<div id="edit-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden z-50">
+    <div class="flex items-center justify-center min-h-screen p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full">
+            <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white" id="modal-title">Edit Setting</h3>
+            </div>
+            <div class="px-6 py-4">
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Key</label>
+                        <input type="text" id="modal-key" readonly class="setting-input bg-gray-100 dark:bg-gray-600">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Description</label>
+                        <p id="modal-description" class="text-sm text-gray-500 dark:text-gray-400"></p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Value</label>
+                        <div id="modal-value-container">
+                            <!-- Input will be inserted here based on type -->
+                        </div>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Type: <span id="modal-type" class="font-medium"></span>
+                            | Default: <span id="modal-default" class="font-medium"></span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex justify-between">
+                <button onclick="deleteSetting()" class="px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
+                    <i class="fas fa-trash mr-1"></i>
+                    Reset to Default
+                </button>
+                <div class="space-x-3">
+                    <button onclick="closeModal()" class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        Cancel
+                    </button>
+                    <button onclick="saveSetting()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-sm font-medium">
+                        Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentSettings = {};
+let currentEditingSetting = null;
+
+// Load settings on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSettings();
+});
+
+function loadSettings() {
+    const loadingState = document.getElementById('loading-state');
+    const settingsContent = document.getElementById('settings-content');
+    
+    loadingState.classList.remove('hidden');
+    settingsContent.classList.add('hidden');
+    
+    fetch('/api/settings')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                currentSettings = data.categories;
+                renderSettings();
+                loadingState.classList.add('hidden');
+                settingsContent.classList.remove('hidden');
+            } else {
+                throw new Error(data.error || 'Failed to load settings');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading settings:', error);
+            showMessage('Error loading settings: ' + error.message, 'error');
+            loadingState.classList.add('hidden');
+        });
+}
+
+function renderSettings() {
+    const tabsContainer = document.getElementById('category-tabs');
+    const categoriesContainer = document.getElementById('settings-categories');
+    
+    // Clear existing content
+    tabsContainer.innerHTML = '';
+    categoriesContainer.innerHTML = '';
+    
+    // Category icons and colors
+    const categoryMeta = {
+        'server': { icon: 'fas fa-server', color: 'blue' },
+        'security': { icon: 'fas fa-shield-alt', color: 'red' },
+        'external': { icon: 'fas fa-plug', color: 'green' },
+        'files': { icon: 'fas fa-folder', color: 'purple' },
+        'caddy': { icon: 'fas fa-cloud', color: 'indigo' }
+    };
+    
+    let isFirst = true;
+    
+    for (const [category, settings] of Object.entries(currentSettings)) {
+        const meta = categoryMeta[category] || { icon: 'fas fa-cog', color: 'gray' };
+        
+        // Create tab
+        const tab = document.createElement('button');
+        tab.className = `tab-button ${isFirst ? 'active' : ''}`;
+        tab.setAttribute('data-category', category);
+        tab.onclick = () => switchTab(category);
+        tab.innerHTML = `<i class="${meta.icon} mr-2 text-gray-900 dark:text-white"></i>${categoryToTitle(category)}`;
+        tabsContainer.appendChild(tab);
+        
+        // Create category content
+        const categoryDiv = document.createElement('div');
+        categoryDiv.id = `category-${category}`;
+        categoryDiv.className = `category-content ${isFirst ? '' : 'hidden'}`;
+        
+        categoryDiv.innerHTML = `
+            <div class="setting-card">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">
+                    <i class="${meta.icon} mr-2 text-gray-900 dark:text-white"></i>
+                    ${categoryToTitle(category)} Settings
+                </h3>
+                <div class="setting-group">
+                    ${settings.map(setting => renderSetting(setting)).join('')}
+                </div>
+            </div>
+        `;
+        
+        categoriesContainer.appendChild(categoryDiv);
+        isFirst = false;
+    }
+}
+
+function renderSetting(setting) {
+    const isModified = setting.in_database;
+    const displayValue = setting.is_sensitive ? setting.value : setting.value;
+    const valueDisplay = setting.type === 'bool' 
+        ? (setting.value ? 'Enabled' : 'Disabled')
+        : (displayValue || 'Not set');
+    
+    return `
+        <div class="setting-item ${isModified ? 'edit-mode' : ''}" data-key="${setting.key}">
+            <div class="flex-1">
+                <div class="flex items-center space-x-2">
+                    <dt class="text-sm font-medium text-gray-900 dark:text-white">${setting.key}</dt>
+                    ${isModified ? '<span class="status-indicator status-info"><i class="fas fa-database mr-1 text-gray-900 dark:text-white"></i>Custom</span>' : ''}
+                </div>
+                <dd class="text-sm text-gray-500 dark:text-gray-400 mt-1">${setting.description || 'No description'}</dd>
+                <div class="text-sm font-mono text-gray-700 dark:text-gray-300 mt-1">
+                    ${valueDisplay}
+                </div>
+            </div>
+            <div class="flex items-center space-x-2">
+                <button onclick="editSetting('${setting.key}')" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-sm">
+                    <i class="fas fa-edit text-gray-900 dark:text-white"></i> Edit
+                </button>
+                ${isModified ? `
+                    <button onclick="deleteSetting('${setting.key}')" class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm">
+                        <i class="fas fa-undo text-gray-900 dark:text-white"></i> Reset
+                    </button>
+                ` : ''}
+            </div>
+        </div>
+    `;
+}
+
+function switchTab(category) {
+    // Update tabs
+    document.querySelectorAll('.tab-button').forEach(tab => {
+        if (tab.getAttribute('data-category') === category) {
+            tab.classList.add('active');
+        } else {
+            tab.classList.remove('active');
+        }
+    });
+    
+    // Update content
+    document.querySelectorAll('.category-content').forEach(content => {
+        if (content.id === `category-${category}`) {
+            content.classList.remove('hidden');
+        } else {
+            content.classList.add('hidden');
+        }
+    });
+}
+
+function editSetting(key) {
+    // Find the setting
+    let setting = null;
+    for (const settings of Object.values(currentSettings)) {
+        const found = settings.find(s => s.key === key);
+        if (found) {
+            setting = found;
+            break;
+        }
+    }
+    
+    if (!setting) return;
+    
+    currentEditingSetting = setting;
+    
+    // Populate modal
+    document.getElementById('modal-title').textContent = `Edit ${setting.key}`;
+    document.getElementById('modal-key').value = setting.key;
+    document.getElementById('modal-description').textContent = setting.description || 'No description available';
+    document.getElementById('modal-type').textContent = setting.type;
+    document.getElementById('modal-default').textContent = setting.default;
+    
+    // Create appropriate input based on type
+    const container = document.getElementById('modal-value-container');
+    container.innerHTML = '';
+    
+    if (setting.type === 'bool') {
+        container.innerHTML = `
+            <label class="flex items-center">
+                <input type="checkbox" id="modal-value" class="setting-checkbox" ${setting.value ? 'checked' : ''}>
+                <span class="ml-2 text-sm text-gray-700 dark:text-gray-300">Enable this setting</span>
+            </label>
+        `;
+    } else if (setting.type === 'int') {
+        container.innerHTML = `<input type="number" id="modal-value" class="setting-input" value="${setting.value || setting.default}">`;
+    } else {
+        const inputType = setting.is_sensitive ? 'password' : 'text';
+        container.innerHTML = `<input type="${inputType}" id="modal-value" class="setting-input" value="${setting.value || setting.default}">`;
+    }
+    
+    // Show modal
+    document.getElementById('edit-modal').classList.remove('hidden');
+}
+
+function closeModal() {
+    document.getElementById('edit-modal').classList.add('hidden');
+    currentEditingSetting = null;
+}
+
+function saveSetting() {
+    if (!currentEditingSetting) return;
+    
+    const valueInput = document.getElementById('modal-value');
+    let value;
+    
+    if (currentEditingSetting.type === 'bool') {
+        value = valueInput.checked;
+    } else if (currentEditingSetting.type === 'int') {
+        value = parseInt(valueInput.value);
+        if (isNaN(value)) {
+            showMessage('Please enter a valid number', 'error');
+            return;
+        }
+    } else {
+        value = valueInput.value;
+    }
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found in meta tag');
+        showMessage('Error: CSRF token not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    const headers = {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken
+    };
+    
+    // Save via API
+    fetch(`/api/settings/${currentEditingSetting.key}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify({ value: value })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            closeModal();
+            loadSettings(); // Reload to show updated values
+        } else {
+            throw new Error(data.error || 'Failed to save setting');
+        }
+    })
+    .catch(error => {
+        console.error('Error saving setting:', error);
+        showMessage('Error saving setting: ' + error.message, 'error');
+    });
+}
+
+async function deleteSetting(key = null) {
+    const settingKey = key || (currentEditingSetting ? currentEditingSetting.key : null);
+    if (!settingKey) return;
+    
+    const confirmed = await showConfirm(`Reset "${settingKey}" to its default value?`, 'Reset Setting');
+    if (!confirmed) return;
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found in meta tag');
+        showMessage('Error: CSRF token not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    fetch(`/api/settings/${settingKey}`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            if (currentEditingSetting) closeModal();
+            loadSettings(); // Reload to show updated values
+        } else {
+            throw new Error(data.error || 'Failed to reset setting');
+        }
+    })
+    .catch(error => {
+        console.error('Error resetting setting:', error);
+        showMessage('Error resetting setting: ' + error.message, 'error');
+    });
+}
+
+async function resetAllSettings() {
+    const confirmed = await showConfirm('Reset ALL settings to their default values? This cannot be undone.', 'Reset All Settings');
+    if (!confirmed) return;
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found in meta tag');
+        showMessage('Error: CSRF token not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    fetch('/api/settings/reset', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            loadSettings();
+        } else {
+            throw new Error(data.error || 'Failed to reset settings');
+        }
+    })
+    .catch(error => {
+        console.error('Error resetting settings:', error);
+        showMessage('Error resetting settings: ' + error.message, 'error');
+    });
+}
+
+async function importEnvSettings() {
+    const confirmed = await showConfirm('Import current .env file values to database? This will override any existing database settings.', 'Import Settings');
+    if (!confirmed) return;
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    if (!csrfToken) {
+        console.error('CSRF token not found in meta tag');
+        showMessage('Error: CSRF token not found. Please refresh the page.', 'error');
+        return;
+    }
+    
+    fetch('/api/settings/import', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showMessage(data.message, 'success');
+            loadSettings();
+        } else {
+            throw new Error(data.error || 'Failed to import settings');
+        }
+    })
+    .catch(error => {
+        console.error('Error importing settings:', error);
+        showMessage('Error importing settings: ' + error.message, 'error');
+    });
+}
+
+function categoryToTitle(category) {
+    const titles = {
+        'server': 'Server',
+        'security': 'Security', 
+        'external': 'External Services',
+        'files': 'File Storage',
+        'caddy': 'Caddy Proxy'
+    };
+    return titles[category] || category.charAt(0).toUpperCase() + category.slice(1);
+}
+
+function showMessage(message, type = 'info') {
+    const container = document.getElementById('message-container');
+    const messageDiv = document.createElement('div');
+    
+    const icons = {
+        'success': 'fas fa-check-circle',
+        'error': 'fas fa-exclamation-circle', 
+        'warning': 'fas fa-exclamation-triangle',
+        'info': 'fas fa-info-circle'
+    };
+    
+    const colors = {
+        'success': 'bg-green-100 border-green-500 text-green-700 dark:bg-green-900/30 dark:border-green-400 dark:text-green-300',
+        'error': 'bg-red-100 border-red-500 text-red-700 dark:bg-red-900/30 dark:border-red-400 dark:text-red-300',
+        'warning': 'bg-yellow-100 border-yellow-500 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-400 dark:text-yellow-300',
+        'info': 'bg-blue-100 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:border-blue-400 dark:text-blue-300'
+    };
+    
+    messageDiv.className = `border-l-4 p-4 rounded shadow-lg ${colors[type]}`;
+    messageDiv.innerHTML = `
+        <div class="flex items-center">
+            <i class="${icons[type]} mr-3"></i>
+            <span>${message}</span>
+            <button onclick="this.parentElement.parentElement.remove()" class="ml-auto text-lg">&times;</button>
+        </div>
+    `;
+    
+    container.appendChild(messageDiv);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (messageDiv.parentElement) {
+            messageDiv.remove();
+        }
+    }, 5000);
+}
+</script>
+{% endblock %}

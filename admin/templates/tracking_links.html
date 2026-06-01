@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Tracking Links - {{ campaign.name }} - Reel v2 Admin{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <div>
+                            <a href="{{ url_for('admin.campaigns') }}" class="text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sr-only">Campaigns</span>
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <a href="{{ url_for('admin.campaign_detail', campaign_id=campaign.id) }}" class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                {{ campaign.name }}
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <a href="{{ url_for('admin.campaign_tracking', campaign_id=campaign.id) }}" class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300">
+                                Tracking
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <span class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400">Links</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="mt-2 text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                Tracking Links Generator
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Generate tracking links for external email tools and campaigns
+            </p>
+        </div>
+    </div>
+
+    <!-- Link Generator -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Generate Links</h3>
+
+            <div class="space-y-6">
+                <!-- User Selection -->
+                <div>
+                    <label for="user-select" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Target User</label>
+                    <select id="user-select" class="mt-1 block w-full border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">Select a user...</option>
+                        <option value="generic">Generic Links (No User Tracking)</option>
+                    </select>
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Choose a tracked user to generate personalized links</p>
+                </div>
+
+                <!-- Target URL (Optional) -->
+                <div>
+                    <label for="target-url" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Target URL (Optional)</label>
+                    <input type="url" id="target-url" class="mt-1 block w-full border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                           placeholder="https://example.com/login">
+                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">URL to redirect to after button clicks (leave blank for campaign page only)</p>
+                </div>
+
+                <!-- Generate Button -->
+                <div>
+                    <button onclick="generateLinks()" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700">
+                        <i class="fas fa-magic mr-2"></i>
+                        Generate Links
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generated Links -->
+    <div id="generated-links" class="hidden bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Generated Tracking Links</h3>
+
+            <div class="space-y-6">
+                <!-- Campaign Link -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <i class="fas fa-link mr-1"></i>
+                        Campaign Link
+                    </label>
+                    <div class="flex rounded-md shadow-sm">
+                        <input type="text" id="campaign-link" readonly
+                               class="flex-1 block w-full rounded-none rounded-l-md border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm">
+                        <button onclick="copyToClipboard('campaign-link')"
+                                class="inline-flex items-center px-3 py-2 rounded-r-md border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Main campaign URL - use this as the primary link in emails</p>
+                </div>
+
+                <!-- Tracking Pixel -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <i class="fas fa-image mr-1"></i>
+                        Email Tracking Pixel
+                    </label>
+                    <div class="flex rounded-md shadow-sm">
+                        <textarea id="tracking-pixel" readonly rows="3"
+                                  class="flex-1 block w-full rounded-none rounded-l-md border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-mono"></textarea>
+                        <button onclick="copyToClipboard('tracking-pixel')"
+                                class="inline-flex items-center px-3 py-2 rounded-r-md border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Invisible pixel to track email opens - place in HTML emails</p>
+                </div>
+
+                <!-- Button Link (if target URL provided) -->
+                <div id="button-link-section" class="hidden">
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <i class="fas fa-mouse-pointer mr-1"></i>
+                        Button Tracking Link
+                    </label>
+                    <div class="flex rounded-md shadow-sm">
+                        <input type="text" id="button-link" readonly
+                               class="flex-1 block w-full rounded-none rounded-l-md border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm">
+                        <button onclick="copyToClipboard('button-link')"
+                                class="inline-flex items-center px-3 py-2 rounded-r-md border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Link that tracks clicks and redirects to target URL</p>
+                </div>
+
+                <!-- Email Template Example -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        <i class="fas fa-envelope mr-1"></i>
+                        Email HTML Example
+                    </label>
+                    <div class="flex rounded-md shadow-sm">
+                        <textarea id="email-template" readonly rows="8"
+                                  class="flex-1 block w-full rounded-none rounded-l-md border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm font-mono"></textarea>
+                        <button onclick="copyToClipboard('email-template')"
+                                class="inline-flex items-center px-3 py-2 rounded-r-md border border-l-0 border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Complete HTML example for your email template</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Link Generation -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Bulk Link Generation</h3>
+
+            <div class="space-y-4">
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    Generate tracking links for all users in this campaign. This creates a CSV file with personalized links for each tracked user.
+                </p>
+
+                <div class="flex items-center space-x-4">
+                    <button onclick="generateBulkLinks()"
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-download mr-2"></i>
+                        Generate CSV Export
+                    </button>
+
+                    <div class="flex items-center">
+                        <input type="checkbox" id="include-pixel" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded">
+                        <label for="include-pixel" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Include tracking pixels</label>
+                    </div>
+
+                    <div class="flex items-center">
+                        <input type="checkbox" id="include-templates" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded">
+                        <label for="include-templates" class="ml-2 text-sm text-gray-700 dark:text-gray-300">Include HTML templates</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const CAMPAIGN_ID = {{ campaign.id }};
+const CAMPAIGN_UID = '{{ campaign.uid }}';
+
+// Load tracked users on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadTrackedUsers();
+});
+
+function loadTrackedUsers() {
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/tracking/users?per_page=1000`)
+        .then(response => response.json())
+        .then(data => {
+            const userSelect = document.getElementById('user-select');
+
+            if (data.tracked_users && data.tracked_users.length > 0) {
+                data.tracked_users.forEach(user => {
+                    const option = document.createElement('option');
+                    option.value = user.tracking_id;
+                    option.textContent = `${user.email} ${user.first_name ? '(' + user.first_name + ')' : ''}`;
+                    userSelect.appendChild(option);
+                });
+            } else {
+                // Add notice if no users
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No tracked users found - add users first';
+                option.disabled = true;
+                userSelect.appendChild(option);
+            }
+        })
+        .catch(error => {
+            console.error('Error loading users:', error);
+        });
+}
+
+function generateLinks() {
+    const userSelect = document.getElementById('user-select');
+    const targetUrl = document.getElementById('target-url').value.trim();
+    const trackingId = userSelect.value;
+
+    if (!trackingId) {
+        showToast('Please select a user or choose generic links', 'warning');
+        return;
+    }
+
+    const requestData = {
+        tracking_id: trackingId === 'generic' ? null : trackingId,
+        target_url: targetUrl || null
+    };
+
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/tracking/links`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken || ''
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.links) {
+            displayGeneratedLinks(data.links, targetUrl);
+            showToast('Links generated successfully!', 'success');
+        } else {
+            showToast('Error generating links: ' + (data.error || 'Unknown error'), 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error generating links:', error);
+        showToast('Error generating links', 'error');
+    });
+}
+
+function displayGeneratedLinks(links, targetUrl) {
+    const generatedLinksDiv = document.getElementById('generated-links');
+    const campaignLink = document.getElementById('campaign-link');
+    const trackingPixel = document.getElementById('tracking-pixel');
+    const buttonLink = document.getElementById('button-link');
+    const buttonLinkSection = document.getElementById('button-link-section');
+    const emailTemplate = document.getElementById('email-template');
+
+    // Show the generated links section
+    generatedLinksDiv.classList.remove('hidden');
+
+    // Fill in the links
+    campaignLink.value = links.campaign_link || '';
+    trackingPixel.value = `<img src="${links.tracking_pixel}" alt="" width="1" height="1" style="display:none;">`;
+
+    // Show button link section if target URL was provided
+    if (targetUrl && links.button_link) {
+        buttonLink.value = links.button_link;
+        buttonLinkSection.classList.remove('hidden');
+    } else {
+        buttonLinkSection.classList.add('hidden');
+    }
+
+    // Generate email template example
+    const emailHtml = generateEmailTemplate(links, targetUrl);
+    emailTemplate.value = emailHtml;
+
+    // Scroll to generated links
+    generatedLinksDiv.scrollIntoView({ behavior: 'smooth' });
+}
+
+function generateEmailTemplate(links, targetUrl) {
+    let template = `<!DOCTYPE html>
+<html>
+<head>
+    <title>Security Alert</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 20px;">
+    <!-- Tracking Pixel -->
+    <img src="${links.tracking_pixel}" alt="" width="1" height="1" style="display:none;">
+
+    <div style="max-width: 600px; margin: 0 auto;">
+        <h2>Important Security Update Required</h2>
+        <p>Dear User,</p>
+        <p>We have detected unusual activity on your account. Please verify your identity immediately.</p>
+
+        <!-- Main Campaign Link -->
+        <p>
+            <a href="${links.campaign_link}" style="background-color: #007cba; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; display: inline-block;">
+                Verify Account Now
+            </a>
+        </p>`;
+
+    if (targetUrl && links.button_link) {
+        template += `
+
+        <!-- Alternative Button Link -->
+        <p>Or click here: <a href="${links.button_link}">Direct Login</a></p>`;
+    }
+
+    template += `
+
+        <p>If you did not request this, please ignore this email.</p>
+        <p>Best regards,<br>IT Security Team</p>
+    </div>
+</body>
+</html>`;
+
+    return template;
+}
+
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    element.select();
+    element.setSelectionRange(0, 99999); // For mobile devices
+
+    try {
+        document.execCommand('copy');
+
+        // Show temporary success feedback
+        const button = element.nextElementSibling;
+        const originalContent = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-check text-green-600 dark:text-green-400"></i>';
+        button.classList.add('bg-green-50', 'dark:bg-green-900');
+
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+            button.classList.remove('bg-green-50', 'dark:bg-green-900');
+        }, 2000);
+
+    } catch (err) {
+        showToast('Failed to copy to clipboard', 'error', 5000, false);
+    }
+}
+
+function generateBulkLinks() {
+    const includePixel = document.getElementById('include-pixel').checked;
+    const includeTemplates = document.getElementById('include-templates').checked;
+
+    const params = new URLSearchParams({
+        format: 'csv',
+        include_pixel: includePixel,
+        include_templates: includeTemplates
+    });
+
+    // Create download link
+    const downloadUrl = `/api/campaigns/${CAMPAIGN_ID}/tracking/links/bulk?${params.toString()}`;
+
+    // Create temporary link and click it
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `${CAMPAIGN_UID}_tracking_links.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
+{% endblock %}

@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+
+{% block title %}Campaigns - Reel v2 Admin{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                Campaigns
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Manage your phishing campaigns and track their performance
+            </p>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4">
+            <a href="{{ url_for('admin.new_campaign') }}" class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                <i class="fas fa-plus mr-2"></i>
+                New Campaign
+            </a>
+        </div>
+    </div>
+
+    <!-- Campaign Stats -->
+    {% if campaigns and campaigns.items %}
+    <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-bullseye text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Campaigns</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">{{ campaigns.total }}</dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-play-circle text-green-400 dark:text-green-300 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Active</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {{ campaigns.items | selectattr('status', 'equalto', 'active') | list | length }}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-pause-circle text-yellow-400 dark:text-yellow-300 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Paused</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {{ campaigns.items | selectattr('status', 'equalto', 'paused') | list | length }}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-edit text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Draft</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {{ campaigns.items | selectattr('status', 'equalto', 'draft') | list | length }}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Campaigns Table -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            {% if campaigns and campaigns.items %}
+            <div class="overflow-hidden">
+                <div class="shadow border-b border-gray-200 dark:border-gray-700 sm:rounded-lg">
+                                <table class="w-full table-fixed divide-y divide-gray-200 dark:divide-gray-700">
+                                    <thead class="bg-gray-50 dark:bg-gray-700">
+                                        <tr>
+                                            <th scope="col" class="w-[22%] px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Campaign
+                                            </th>
+                                            <th scope="col" class="w-[8%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Type
+                                            </th>
+                                            <th scope="col" class="w-[30%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Workflows
+                                            </th>
+                                            <th scope="col" class="w-[9%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Status
+                                            </th>
+                                            <th scope="col" class="w-[11%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Created
+                                            </th>
+                                            <th scope="col" class="w-[7%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                                                Events
+                                            </th>
+                                            <th scope="col" class="w-[13%] px-3 py-3">
+                                                <span class="sr-only">Actions</span>
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                                        {% for campaign in campaigns.items %}
+                                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200">
+                                            <td class="px-4 py-4">
+                                                <div class="flex items-center min-w-0">
+                                                    <div class="flex-shrink-0 h-10 w-10">
+                                                        <div class="h-10 w-10 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                                                            <i class="fas fa-bullseye text-gray-600 dark:text-gray-300"></i>
+                                                        </div>
+                                                    </div>
+                                                    <div class="ml-4 min-w-0">
+                                                        <div class="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                                            <a href="{{ url_for('admin.campaign_detail', campaign_id=campaign.id) }}" class="hover:text-blue-600 dark:hover:text-blue-400">
+                                                                {{ campaign.name }}
+                                                            </a>
+                                                        </div>
+                                                        <div class="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                                            {% if campaign.uid %}UID: {{ campaign.uid }}{% else %}No UID{% endif %}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap">
+                                                {% if campaign.campaign_type == 'inbound' %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                                                    <i class="fas fa-arrow-down mr-1"></i>
+                                                    Inbound
+                                                </span>
+                                                {% elif campaign.campaign_type == 'outbound' %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
+                                                    <i class="fas fa-arrow-up mr-1"></i>
+                                                    Outbound
+                                                </span>
+                                                {% else %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-300">
+                                                    Unknown
+                                                </span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="px-3 py-4">
+                                                <div class="text-sm text-gray-900 dark:text-white flex flex-wrap gap-1">
+                                                    {% if campaign.get_workflow %}
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 truncate max-w-[140px]">
+                                                        GET: {{ campaign.get_workflow.name }}
+                                                    </span>
+                                                    {% endif %}
+                                                    {% if campaign.post_workflow %}
+                                                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 truncate max-w-[140px]">
+                                                        POST: {{ campaign.post_workflow.name }}
+                                                    </span>
+                                                    {% endif %}
+                                                    {% if not campaign.get_workflow and not campaign.post_workflow %}
+                                                    <span class="text-gray-400 dark:text-gray-500 text-xs">
+                                                        {% if campaign.campaign_type == 'outbound' %}N/A{% else %}No workflows{% endif %}
+                                                    </span>
+                                                    {% endif %}
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap">
+                                                {% if campaign.status == 'active' %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                                    <span class="w-1.5 h-1.5 mr-1 bg-green-400 rounded-full"></span>
+                                                    Active
+                                                </span>
+                                                {% elif campaign.status == 'paused' %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                    <span class="w-1.5 h-1.5 mr-1 bg-yellow-400 rounded-full"></span>
+                                                    Paused
+                                                </span>
+                                                {% elif campaign.status == 'completed' %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                    <span class="w-1.5 h-1.5 mr-1 bg-gray-400 rounded-full"></span>
+                                                    Completed
+                                                </span>
+                                                {% else %}
+                                                <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                                    <span class="w-1.5 h-1.5 mr-1 bg-gray-400 rounded-full"></span>
+                                                    Draft
+                                                </span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                {{ campaign.created_at.strftime('%b %d, %Y') if campaign.created_at else 'N/A' }}
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                                                <div class="flex items-center">
+                                                    <i class="fas fa-chart-line mr-1 text-gray-400 dark:text-gray-500"></i>
+                                                    {{ campaign.events | length }}
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                <div class="flex items-center justify-end space-x-2">
+                                                    <a href="{{ url_for('admin.campaign_detail', campaign_id=campaign.id) }}" 
+                                                       class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+                                                       title="View campaign">
+                                                        <i class="fas fa-eye"></i>
+                                                    </a>
+                                                    <a href="{{ url_for('admin.edit_campaign', campaign_id=campaign.id) }}" 
+                                                       class="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
+                                                       title="Edit campaign">
+                                                        <i class="fas fa-edit"></i>
+                                                    </a>
+                                                    <button onclick="toggleCampaignStatus({{ campaign.id }}, '{{ campaign.status }}')" 
+                                                            class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300"
+                                                            title="Toggle campaign status">
+                                                        {% if campaign.status == 'active' %}
+                                                        <i class="fas fa-pause"></i>
+                                                        {% elif campaign.status == 'paused' %}
+                                                        <i class="fas fa-play"></i>
+                                                        {% else %}
+                                                        <i class="fas fa-play"></i>
+                                                        {% endif %}
+                                                    </button>
+                                                    <button onclick="deleteCampaign({{ campaign.id }}, '{{ campaign.name }}')" 
+                                                            class="text-red-400 dark:text-red-300 hover:text-red-600 dark:hover:text-red-200"
+                                                            title="Delete campaign">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {% if campaigns.pages > 1 %}
+            <div class="bg-white dark:bg-gray-800 px-4 py-3 flex items-center justify-between border-t border-gray-200 dark:border-gray-700 sm:px-6 mt-6 transition-colors duration-200">
+                <div class="flex-1 flex justify-between sm:hidden">
+                    {% if campaigns.has_prev %}
+                    <a href="{{ url_for('admin.campaigns', page=campaigns.prev_num) }}" 
+                       class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                        Previous
+                    </a>
+                    {% endif %}
+                    {% if campaigns.has_next %}
+                    <a href="{{ url_for('admin.campaigns', page=campaigns.next_num) }}"
+                       class="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                        Next
+                    </a>
+                    {% endif %}
+                </div>
+                <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+                    <div>
+                        <p class="text-sm text-gray-700 dark:text-gray-300">
+                            Showing
+                            <span class="font-medium">{{ ((campaigns.page - 1) * campaigns.per_page) + 1 }}</span>
+                            to
+                            <span class="font-medium">{{ campaigns.page * campaigns.per_page if campaigns.page * campaigns.per_page < campaigns.total else campaigns.total }}</span>
+                            of
+                            <span class="font-medium">{{ campaigns.total }}</span>
+                            results
+                        </p>
+                    </div>
+                    <div>
+                        <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                            {% if campaigns.has_prev %}
+                            <a href="{{ url_for('admin.campaigns', page=campaigns.prev_num) }}"
+                               class="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                            {% endif %}
+                            
+                            {% for page_num in campaigns.iter_pages() %}
+                                {% if page_num %}
+                                    {% if page_num != campaigns.page %}
+                                    <a href="{{ url_for('admin.campaigns', page=page_num) }}"
+                                       class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                        {{ page_num }}
+                                    </a>
+                                    {% else %}
+                                    <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-blue-50 dark:bg-blue-900/30 text-sm font-medium text-blue-600 dark:text-blue-400">
+                                        {{ page_num }}
+                                    </span>
+                                    {% endif %}
+                                {% else %}
+                                <span class="relative inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-700 dark:text-gray-200">
+                                    ...
+                                </span>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            {% if campaigns.has_next %}
+                            <a href="{{ url_for('admin.campaigns', page=campaigns.next_num) }}"
+                               class="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                            {% endif %}
+                        </nav>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            {% else %}
+            <!-- Empty State -->
+            <div class="text-center py-12">
+                <i class="fas fa-bullseye text-gray-400 dark:text-gray-500 text-6xl mb-4"></i>
+                <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">No campaigns</h3>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Get started by creating your first phishing campaign.</p>
+                <div class="mt-6">
+                    <a href="{{ url_for('admin.new_campaign') }}" 
+                       class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                        <i class="fas fa-plus mr-2"></i>
+                        New Campaign
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div class="mt-3 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30">
+                <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mt-5">Delete Campaign</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Are you sure you want to delete "<span id="deleteCampaignName"></span>"? This action cannot be undone.
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <button id="confirmDelete" 
+                        class="px-4 py-2 bg-red-500 text-white text-base font-medium rounded-md w-24 mr-2 hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-300">
+                    Delete
+                </button>
+                <button onclick="hideDeleteModal()" 
+                        class="px-4 py-2 bg-gray-500 text-white text-base font-medium rounded-md w-24 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-300">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let deleteTargetId = null;
+
+function toggleCampaignStatus(campaignId, currentStatus) {
+    const newStatus = currentStatus === 'active' ? 'paused' : 'active';
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    fetch(`/campaigns/${campaignId}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Campaign status updated successfully', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Error updating campaign status: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error updating campaign status', 'error');
+    });
+}
+
+function deleteCampaign(campaignId, campaignName) {
+    deleteTargetId = campaignId;
+    document.getElementById('deleteCampaignName').textContent = campaignName;
+    document.getElementById('deleteModal').classList.remove('hidden');
+}
+
+function hideDeleteModal() {
+    document.getElementById('deleteModal').classList.add('hidden');
+    deleteTargetId = null;
+}
+
+document.getElementById('confirmDelete').addEventListener('click', function() {
+    if (deleteTargetId) {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        
+        fetch(`/api/campaigns/${deleteTargetId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showToast('Campaign deleted successfully', 'success');
+                setTimeout(() => location.reload(), 500);
+            } else {
+                showToast('Error deleting campaign: ' + data.error, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Error deleting campaign', 'error');
+        })
+        .finally(() => {
+            hideDeleteModal();
+        });
+    }
+});
+
+// Close modal when clicking outside
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideDeleteModal();
+    }
+});
+</script>
+{% endblock %}

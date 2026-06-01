@@ -1,0 +1,1633 @@
+{% extends "base.html" %}
+
+{% block title %}{% if campaign %}Edit Campaign{% else %}New Campaign{% endif %} - Reel v2 Admin{% endblock %}
+
+{% block extra_head %}
+<style>
+.step-content {
+    display: none;
+}
+.step-content.active {
+    display: block;
+}
+.step-indicator {
+    @apply w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm font-medium;
+}
+.step-indicator.completed {
+    @apply bg-blue-600 border-blue-600 text-white;
+}
+.step-indicator.current {
+    @apply border-blue-600 text-blue-600 bg-blue-50 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-500;
+}
+.step-indicator.pending {
+    @apply border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <div>
+                            <a href="{{ url_for('admin.campaigns') }}" class="text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sr-only">Campaigns</span>
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <span class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400">
+                                {% if campaign %}Edit Campaign{% else %}New Campaign{% endif %}
+                            </span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="mt-2 text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                {% if campaign %}Edit: {{ campaign.name }}{% else %}Create New Campaign{% endif %}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {% if campaign %}Update your existing campaign configuration{% else %}Set up a new phishing campaign{% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Progress Steps -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 transition-colors duration-200">
+        <nav aria-label="Progress">
+            <ol class="flex items-center">
+                <li class="relative flex-1">
+                    <div class="flex items-center">
+                        <div id="step1-indicator" class="step-indicator current">
+                            <span>1</span>
+                        </div>
+                        <div class="ml-4 min-w-0 flex flex-col">
+                            <span class="text-xs font-semibold tracking-wide uppercase text-blue-600 dark:text-blue-400">Step 1</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Basic Information</span>
+                        </div>
+                    </div>
+                    <div class="hidden sm:block absolute top-4 left-4 w-full h-0.5 bg-gray-200 dark:bg-gray-700" aria-hidden="true">
+                        <div class="bg-blue-600 h-0.5 w-0" id="progress-bar-1"></div>
+                    </div>
+                </li>
+
+                <li class="relative flex-1">
+                    <div class="flex items-center">
+                        <div id="step2-indicator" class="step-indicator pending">
+                            <span>2</span>
+                        </div>
+                        <div class="ml-4 min-w-0 flex flex-col">
+                            <span class="text-xs font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">Step 2</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Template Selection</span>
+                        </div>
+                    </div>
+                    <div class="hidden sm:block absolute top-4 left-4 w-full h-0.5 bg-gray-200 dark:bg-gray-700" aria-hidden="true">
+                        <div class="bg-blue-600 h-0.5 w-0" id="progress-bar-2"></div>
+                    </div>
+                </li>
+
+                <li class="relative flex-1">
+                    <div class="flex items-center">
+                        <div id="step3-indicator" class="step-indicator pending">
+                            <span>3</span>
+                        </div>
+                        <div class="ml-4 min-w-0 flex flex-col">
+                            <span class="text-xs font-semibold tracking-wide uppercase text-gray-500 dark:text-gray-400">Step 3</span>
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">Configuration</span>
+                        </div>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+    </div>
+
+    <!-- Campaign Form -->
+    <form id="campaignForm" class="space-y-6">
+        <!-- Step 1: Basic Information -->
+        <div id="step1" class="step-content active">
+            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 transition-colors duration-200">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Basic Campaign Information</h3>
+                
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div class="sm:col-span-2">
+                        <label for="campaign_type" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                            <span>Campaign Type</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Campaign type determines how your campaign operates.&#10;&#10;Inbound: Handles incoming HTTP requests from visitors. Use for phishing pages, login forms, and interactive campaigns. Requires a UID for the campaign URL.&#10;&#10;Outbound: For sending emails, phone calls, or other outbound communications. No incoming requests. Does not require a UID."></i>
+                        </label>
+                        <div class="space-y-3">
+                            <div class="flex items-center">
+                                <input id="campaign_type_inbound" name="campaign_type" type="radio" value="inbound"
+                                       {% if not campaign or campaign.campaign_type == 'inbound' %}checked{% endif %}
+                                       class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                       onchange="toggleCampaignTypeFields()">
+                                <div class="ml-3">
+                                    <label for="campaign_type_inbound" class="text-sm font-medium text-gray-700 dark:text-gray-300">Inbound</label>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">Handle incoming HTTP requests (existing functionality)</p>
+                                </div>
+                            </div>
+                            <div class="flex items-center">
+                                <input id="campaign_type_outbound" name="campaign_type" type="radio" value="outbound"
+                                       {% if campaign and campaign.campaign_type == 'outbound' %}checked{% endif %}
+                                       class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                       onchange="toggleCampaignTypeFields()">
+                                <div class="ml-3">
+                                    <label for="campaign_type_outbound" class="text-sm font-medium text-gray-700 dark:text-gray-300">Outbound</label>
+                                    <p class="text-xs text-gray-500 dark:text-gray-400">For sending emails, phone calls, etc. (no incoming requests)</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <label for="name" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Campaign Name</label>
+                        <input type="text" name="name" id="name" required
+                               class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                               placeholder="Enter campaign name"
+                               value="{{ campaign.name if campaign else '' }}">
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Choose a descriptive name for your campaign</p>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <label for="description" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+                        <textarea name="description" id="description" rows="3"
+                                  class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                                  placeholder="Optional description of the campaign">{{ campaign.description if campaign else '' }}</textarea>
+                    </div>
+
+                    <div id="workflow-fields" class="sm:col-span-2">
+                        <!-- Inbound campaigns: Show GET and POST workflows -->
+                        <div id="inbound-workflows" class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                            <div>
+                                <label for="get_workflow_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                    <span>GET Workflow</span>
+                                    <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                       data-tooltip="Workflow executed when someone visits your campaign URL (GET request).&#10;&#10;Use for:&#10;- Displaying landing pages&#10;- Showing login forms&#10;- Initial page load logic&#10;- Template rendering&#10;&#10;This workflow runs before the page is displayed to the visitor."></i>
+                                </label>
+                                <select name="get_workflow_id" id="get_workflow_id"
+                                        class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                    <option value="">Select GET workflow (optional)</option>
+                                    {% for workflow in get_workflows %}
+                                    <option value="{{ workflow.id }}" {{ 'selected' if campaign and campaign.get_workflow_id == workflow.id else '' }}>
+                                        {{ workflow.name }}{% if workflow.http_method and workflow.http_method != 'BOTH' %} ({{ workflow.http_method }}){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Workflow to execute for GET requests</p>
+                            </div>
+
+                            <div>
+                                <label for="post_workflow_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                    <span>POST Workflow</span>
+                                    <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                       data-tooltip="Workflow executed when a form is submitted (POST request).&#10;&#10;Use for:&#10;- Processing form submissions&#10;- Capturing credentials&#10;- Handling user input&#10;- Data validation and storage&#10;&#10;This workflow runs after the user submits a form on your campaign page."></i>
+                                </label>
+                                <select name="post_workflow_id" id="post_workflow_id"
+                                        class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                    <option value="">Select POST workflow (optional)</option>
+                                    {% for workflow in post_workflows %}
+                                    <option value="{{ workflow.id }}" {{ 'selected' if campaign and campaign.post_workflow_id == workflow.id else '' }}>
+                                        {{ workflow.name }}{% if workflow.http_method and workflow.http_method != 'BOTH' %} ({{ workflow.http_method }}){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Workflow to execute for POST requests</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Outbound campaigns: Show single workflow field (required) -->
+                        <div id="outbound-workflow" class="hidden">
+                            <div>
+                                <label for="outbound_workflow_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                    <span>Workflow</span>
+                                    <span class="text-red-500 dark:text-red-400" title="Required">*</span>
+                                    <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                       data-tooltip="Workflow for outbound campaigns that generates and sends content.&#10;&#10;Unlike inbound workflows (GET/POST), this workflow:&#10;- Runs when you trigger the campaign manually&#10;- Generates email content, phone calls, or other outbound communications&#10;- Can use target selectors to process multiple recipients&#10;- Does not handle incoming HTTP requests"></i>
+                                </label>
+                                <select name="outbound_workflow_id" id="outbound_workflow_id" required
+                                        class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                    <option value="">Select workflow (required)</option>
+                                    {% for workflow in outbound_workflows %}
+                                    <option value="{{ workflow.id }}" {{ 'selected' if campaign and campaign.post_workflow_id == workflow.id else '' }}>
+                                        {{ workflow.name }}{% if workflow.workflow_type == 'sending' %} (sending){% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Workflow for email generation and sending. Required for outbound campaigns.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="variables" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span>Variables</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Campaign variables are key-value pairs accessible throughout workflow execution. They can be used in templates, plugin configurations, and conditional logic.&#10;&#10;Examples:&#10;{&#10;  &quot;company_name&quot;: &quot;Acme Corp&quot;,&#10;  &quot;sender_email&quot;: &quot;noreply@acme.com&quot;,&#10;  &quot;support_url&quot;: &quot;https://support.acme.com&quot;,&#10;  &quot;branding&quot;: {&#10;    &quot;primary_color&quot;: &quot;#0066cc&quot;,&#10;    &quot;logo_url&quot;: &quot;https://acme.com/logo.png&quot;&#10;  }&#10;}&#10;&#10;Access in templates: {&#123;{company_name}&#125;} or {&#123;{branding.primary_color}&#125;}&#10;Access in workflows: Use context variables like {&#123;{vars.company_name}&#125;}"></i>
+                        </label>
+                        <textarea name="variables" id="variables" rows="6"
+                                  class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  placeholder='{"key": "value", "nested": {"key": "value"}}'>{{ campaign.variables | tojson(indent=2) if campaign and campaign.variables else '{}' }}</textarea>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">JSON object with variables accessible in workflows</p>
+                    </div>
+
+                    <div id="uid-field">
+                        <label for="uid" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                            <span>Campaign UID</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Unique identifier for your campaign URL.&#10;&#10;The UID creates your campaign&#39;s public URL:&#10;https://your-domain.com/{uid}&#10;&#10;Only used for inbound campaigns. Outbound campaigns don&#39;t need a UID since they don&#39;t receive incoming requests.&#10;&#10;Leave blank to auto-generate, or set a custom value (must be unique)."></i>
+                        </label>
+                        <div class="mt-1 flex rounded-md shadow-sm">
+                            <input type="text" name="uid" id="uid"
+                                   class="flex-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                                   placeholder="auto-generated"
+                                   value="{{ campaign.uid if campaign else '' }}">
+                            <button type="button" onclick="generateUID()" 
+                                    class="ml-3 inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                            Campaign URL: <code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-xs text-gray-900 dark:text-white">{{ request.url_root }}<span id="uid-preview">{{ campaign.uid if campaign else 'your-uid' }}</span><span id="gate-preview">{% if campaign and getattr(campaign, 'gate_enabled', False) and campaign.gate_token %}?{{ campaign.gate_param_name or 'rid' }}={{ campaign.gate_token }}{% endif %}</span></code>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end">
+                    <button type="button" onclick="nextStep()" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors duration-200">
+                        Next: Template Selection
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Template Selection -->
+        <div id="step2" class="step-content">
+            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 transition-colors duration-200">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Choose Template</h3>
+                
+                <div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                    <!-- Template Options -->
+                    <div>
+                        <label class="text-base font-medium text-gray-900 dark:text-white flex items-center gap-2">
+                            <span>Template Source</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Choose where to get your campaign template.&#10;&#10;Existing Template: Select from your template library. Best for reusable designs with predefined variables.&#10;&#10;Custom HTML: Write your own HTML template. Use {&#123;{variable_name}&#125;} for dynamic content. Best for unique designs or quick prototypes.&#10;&#10;Workflow defined: No campaign-level template; the workflow provides the template (e.g. Render Template node using library, custom, or variable)."></i>
+                        </label>
+                        <fieldset class="mt-4">
+                            <legend class="sr-only">Template source</legend>
+                            <div class="space-y-4">
+                                <div class="flex items-center">
+                                    <input id="existing-template" name="template_source" type="radio" value="existing" 
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300" checked>
+                                    <label for="existing-template" class="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Use Existing Template
+                                    </label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input id="custom-template" name="template_source" type="radio" value="custom"
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                                    <label for="custom-template" class="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Custom HTML Template
+                                    </label>
+                                </div>
+                                <div class="flex items-center">
+                                    <input id="workflow-defined-template" name="template_source" type="radio" value="workflow_defined"
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300">
+                                    <label for="workflow-defined-template" class="ml-3 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                                        Workflow defined
+                                    </label>
+                                </div>
+                                <p class="ml-7 text-xs text-gray-500 dark:text-gray-400" id="workflow-defined-help">Template is provided by the workflow (e.g. Render Template node using library, custom, or variable). No campaign-level template.</p>
+                            </div>
+                        </fieldset>
+                    </div>
+
+                    <!-- Template Preview -->
+                    <div>
+                        <label class="text-base font-medium text-gray-900 dark:text-white">Preview</label>
+                        <div class="mt-4 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg h-48 flex items-center justify-center bg-white dark:bg-gray-700 transition-colors duration-200">
+                            <div class="text-center">
+                                <i class="fas fa-eye text-gray-400 dark:text-gray-500 text-2xl mb-2"></i>
+                                <p class="text-sm text-gray-500 dark:text-gray-400">Template preview will appear here</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Existing Templates -->
+                <div id="existing-templates" class="mt-6">
+                    <label for="template_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Select Template</label>
+                    <select name="template_id" id="template_id" onchange="loadTemplateVariables()"
+                            class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                        <option value="">Choose a template</option>
+                        <!-- Templates will be loaded dynamically -->
+                    </select>
+                </div>
+
+                <!-- Template Variables -->
+                <div id="template-variables" class="mt-6 hidden">
+                    <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-4">Template Variables</h4>
+                    <div id="variables-container" class="space-y-4">
+                        <!-- Variables will be loaded dynamically -->
+                    </div>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        Customize the variables used in your selected template
+                    </p>
+                </div>
+
+                <!-- Custom Template -->
+                <div id="custom-template-area" class="mt-6 hidden">
+                    <label for="custom_html" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                        <span>Custom HTML</span>
+                        <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                           data-tooltip="Write your own HTML template with variable support.&#10;&#10;Use {&#123;{variable_name}&#125;} to insert campaign variables or context data.&#10;Examples: {&#123;{company_name}&#125;}, {&#123;{target.email}&#125;}, {&#123;{campaign.name}&#125;}&#10;&#10;Variables are automatically replaced when the template is rendered. You can also use Jinja2 syntax for more advanced templating."></i>
+                    </label>
+                    <textarea name="custom_html" id="custom_html" rows="10"
+                              class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 font-mono text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                              placeholder="Enter your custom HTML template here..."></textarea>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">
+                        Use <code class="bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-900 dark:text-white">{{variable_name}}</code> for dynamic content
+                    </p>
+                </div>
+
+                <div class="mt-6 flex justify-between">
+                    <button type="button" onclick="previousStep()" 
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-md shadow-sm text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Previous
+                    </button>
+                    <button type="button" onclick="nextStep()" 
+                            class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors duration-200">
+                        Next: Configuration
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Configuration -->
+        <div id="step3" class="step-content">
+            <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 transition-colors duration-200">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-6">Campaign Configuration</h3>
+                
+                <div class="space-y-6">
+                    <!-- Outbound MMS Settings (outbound only) -->
+                    <div id="outbound-mms-section" style="display: none;">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4">MMS Delivery</h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="is_mms_enabled" name="is_mms_enabled" type="checkbox"
+                                           {% if campaign and campaign.is_mms_enabled %}checked{% endif %}
+                                           onchange="toggleMmsUrlField()"
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="is_mms_enabled" class="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span>Enable MMS</span>
+                                        <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                                           data-tooltip="Enable MMS delivery for this outbound campaign.&#10;&#10;When enabled:&#10;- Sets up a Caddy route for the MMS URL below&#10;- Twilio fetches MMS card images from this URL&#10;- The phishing server's /m/<uuid> endpoint becomes publicly reachable on this domain"></i>
+                                    </label>
+                                    <p class="text-gray-500 dark:text-gray-400">Route a public domain to this server so Twilio can fetch MMS card images</p>
+                                </div>
+                            </div>
+                            <div id="mms-url-field" style="display: none;" class="ml-7">
+                                <label for="mms_custom_domain" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">MMS URL</label>
+                                <input type="text" id="mms_custom_domain" name="custom_domain"
+                                       value="{% if campaign %}{{ campaign.custom_domain or '' }}{% endif %}"
+                                       placeholder="secure.example.com"
+                                       class="block w-full rounded-md border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    Public hostname Twilio will fetch MMS card images from. Caddy routes this to the phishing server.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Security Configuration (inbound only; hidden for outbound) -->
+                    <div id="security-settings-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4">Security Settings</h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="require_https" name="require_https" type="checkbox"
+                                           {% if campaign %}
+                                               {% if campaign.config.get('require_https') == True and campaign.ssl_mode != 'disabled' %}checked{% endif %}
+                                           {% else %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="require_https" class="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span>Require HTTPS</span>
+                                        <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                           data-tooltip="Forces all connections to use HTTPS encryption.&#10;&#10;When enabled:&#10;- HTTP requests are automatically redirected to HTTPS&#10;- Ensures all data is encrypted in transit&#10;- Required for secure credential capture&#10;- Recommended for all production campaigns&#10;&#10;Note: Requires SSL/TLS to be configured (not disabled)."></i>
+                                    </label>
+                                    <p class="text-gray-500 dark:text-gray-400">Force HTTPS connections for enhanced security</p>
+                                </div>
+                            </div>
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="enable_rate_limiting" name="enable_rate_limiting" type="checkbox"
+                                           {% if campaign %}
+                                               {% if campaign.config.get('enable_rate_limiting') == True %}checked{% endif %}
+                                           {% else %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="enable_rate_limiting" class="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span>Enable Rate Limiting</span>
+                                        <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                           data-tooltip="Limits the number of requests per IP address to prevent abuse.&#10;&#10;Benefits:&#10;- Prevents brute force attacks&#10;- Reduces server load from automated tools&#10;- Protects against DDoS attempts&#10;- Helps maintain campaign legitimacy&#10;&#10;When enabled, excessive requests from a single IP will be temporarily blocked."></i>
+                                    </label>
+                                    <p class="text-gray-500 dark:text-gray-400">Prevent abuse by limiting requests per IP address</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- User-Agent Filtering (only for inbound campaigns) -->
+                    <div id="ua-filter-section" class="hidden">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>User-Agent Filtering</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Filter requests based on User-Agent strings. When enabled, requests from blocked User-Agents (like curl, VirusTotal, AI agents) will see a benign template instead of your campaign page."></i>
+                        </h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="ua_filter_enabled" name="ua_filter_enabled" type="checkbox"
+                                           {% if campaign and hasattr(campaign, 'ua_filter_enabled') and campaign.ua_filter_enabled %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                           onchange="toggleUAFilterSettings()">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="ua_filter_enabled" class="font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                        <span>Enable User-Agent Filtering</span>
+                                        <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                           data-tooltip="When enabled, requests with User-Agents matching the deny list will be shown a benign template instead of your campaign page. This helps hide your campaign from automated scanners and AI agents."></i>
+                                    </label>
+                                    <p class="text-gray-500 dark:text-gray-400">Show benign template to blocked User-Agents</p>
+                                </div>
+                            </div>
+                            
+                            <div id="ua-filter-settings" class="hidden space-y-4">
+                                <div>
+                                    <label for="ua_deny_list" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Deny List</label>
+                                    <textarea name="ua_deny_list" id="ua_deny_list" rows="6"
+                                              class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                              placeholder="curl&#10;virustotal&#10;gpt&#10;claude">{% if campaign and hasattr(campaign, 'ua_deny_list') and campaign.ua_deny_list %}{% for item in campaign.ua_deny_list %}{{ item }}{% if not loop.last %}&#10;{% endif %}{% endfor %}{% else %}curl
+virustotal
+gpt
+claude
+anthropic
+openai
+chatgpt
+bard
+gemini
+perplexity
+copilot
+bing
+crawler
+bot
+spider
+scraper{% endif %}</textarea>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">One User-Agent string per line. Matching is case-insensitive (e.g., "curl" matches "curl/7.68.0")</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="ua_blocked_template_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Blocked Template</label>
+                                    <select name="ua_blocked_template_id" id="ua_blocked_template_id"
+                                            class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                        <option value="">Select template to show when blocked</option>
+                                        <!-- Templates will be loaded dynamically -->
+                                    </select>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Template to display when a blocked User-Agent is detected</p>
+                                    {% if campaign and hasattr(campaign, 'ua_blocked_template_id') and campaign.ua_blocked_template_id %}
+                                    <script>
+                                    // Set the blocked template ID when page loads
+                                    document.addEventListener('DOMContentLoaded', function() {
+                                        const select = document.getElementById('ua_blocked_template_id');
+                                        if (select) {
+                                            // Will be set by loadTemplatesForUAFilter()
+                                        }
+                                    });
+                                    </script>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Custom 404 Page (only for inbound campaigns) -->
+                    <div id="custom-404-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>Custom 404 Page</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                               data-tooltip="Customize the 404 page shown when a visitor hits a non-existent path on this campaign's domain. Use default, custom HTML, or a template from the library."></i>
+                        </h4>
+                        <div class="space-y-4">
+                            <div class="space-y-3">
+                                <div class="flex items-center">
+                                    <input id="custom_404_default" name="custom_404_mode" type="radio" value="default"
+                                           {% if not campaign or (not campaign.config.get('custom_404_body') and not campaign.config.get('custom_404_template_id')) %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                           onchange="toggleCustom404Settings()">
+                                    <div class="ml-3">
+                                        <label for="custom_404_default" class="text-sm font-medium text-gray-700 dark:text-gray-300">Default</label>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">Use system default 404 page</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center">
+                                    <input id="custom_404_body" name="custom_404_mode" type="radio" value="body"
+                                           {% if campaign and campaign.config.get('custom_404_body') %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                           onchange="toggleCustom404Settings()">
+                                    <div class="ml-3">
+                                        <label for="custom_404_body" class="text-sm font-medium text-gray-700 dark:text-gray-300">Custom HTML</label>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">Enter raw HTML for the 404 page</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-center">
+                                    <input id="custom_404_template" name="custom_404_mode" type="radio" value="template"
+                                           {% if campaign and campaign.config.get('custom_404_template_id') %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                           onchange="toggleCustom404Settings()">
+                                    <div class="ml-3">
+                                        <label for="custom_404_template" class="text-sm font-medium text-gray-700 dark:text-gray-300">Template</label>
+                                        <p class="text-xs text-gray-500 dark:text-gray-400">Use a template from the library</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div id="custom-404-settings" class="hidden space-y-4">
+                                <div id="custom-404-body-wrap" class="hidden">
+                                    <label for="custom_404_body_text" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Custom HTML</label>
+                                    <textarea name="custom_404_body_text" id="custom_404_body_text" rows="8"
+                                              class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                              placeholder="<html>...</html>">{% if campaign and campaign.config.get('custom_404_body') %}{{ campaign.config.get('custom_404_body') }}{% endif %}</textarea>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Raw HTML for the 404 page. Supports variable interpolation.</p>
+                                </div>
+                                <div id="custom-404-template-wrap" class="hidden">
+                                    <label for="custom_404_template_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">404 Template</label>
+                                    <select name="custom_404_template_id" id="custom_404_template_id"
+                                            class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                        <option value="">Select template for 404 page</option>
+                                    </select>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Template from the library to display when a page is not found</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CAPTCHA (only for inbound campaigns) -->
+                    <div id="captcha-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>CAPTCHA</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                               data-tooltip="Require visitors to pass a CAPTCHA (Cloudflare Turnstile) before seeing the landing page. They solve once per session, then GET/POST workflows run as normal."></i>
+                        </h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="captcha_enabled" name="captcha_enabled" type="checkbox"
+                                           {% if campaign and getattr(campaign, 'captcha_enabled', False) %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                           onchange="toggleCaptchaSettings()">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="captcha_enabled" class="font-medium text-gray-700 dark:text-gray-300">Require CAPTCHA before landing page</label>
+                                    <p class="text-gray-500 dark:text-gray-400">Show a CAPTCHA page first; after solving, the landing page and form submit work as usual.</p>
+                                </div>
+                            </div>
+                            <div id="captcha-settings" class="hidden space-y-4">
+                                <div>
+                                    <label for="captcha_template_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">CAPTCHA Template</label>
+                                    <select name="captcha_template_id" id="captcha_template_id"
+                                            class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                        <option value="">Select template for CAPTCHA page</option>
+                                    </select>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Template must include Turnstile widget and a form that POSTs to the campaign URL.</p>
+                                </div>
+                                <div>
+                                    <label for="captcha_site_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Turnstile Site Key (public)</label>
+                                    <input type="text" name="captcha_site_key" id="captcha_site_key"
+                                           value="{{ campaign.config.get('captcha_site_key', '') if campaign and campaign.config else '' }}"
+                                           class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                           placeholder="0x4AAAAAAABkMYinukE8K5Y0g">
+                                </div>
+                                <div>
+                                    <label for="captcha_secret_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Turnstile Secret Key (private)</label>
+                                    <input type="password" name="captcha_secret_key" id="captcha_secret_key"
+                                           value="{{ campaign.config.get('captcha_secret_key', '') if campaign and campaign.config else '' }}"
+                                           class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                           placeholder="0x4AAAAAAABkMYinukE8K5Y0g" autocomplete="off">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gate Token (only for inbound campaigns) -->
+                    <div id="gate-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>Gate Token</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                               data-tooltip="Require a secret token in the URL query string (e.g. ?rid=abc123) for visitors to access this campaign. Without the correct token, Caddy serves a decoy page or redirects away. Use this to restrict access to only recipients who received the link."></i>
+                        </h4>
+                        <div class="space-y-4">
+                            <div class="flex items-start">
+                                <div class="flex items-center h-5">
+                                    <input id="gate_enabled" name="gate_enabled" type="checkbox"
+                                           {% if campaign and getattr(campaign, 'gate_enabled', False) %}checked{% endif %}
+                                           class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                           onchange="toggleGateSettings()">
+                                </div>
+                                <div class="ml-3 text-sm">
+                                    <label for="gate_enabled" class="font-medium text-gray-700 dark:text-gray-300">Require gate token in URL</label>
+                                    <p class="text-gray-500 dark:text-gray-400">Only visitors with the correct query parameter can access the campaign. Others see a decoy page or get redirected.</p>
+                                </div>
+                            </div>
+                            <div id="gate-settings" class="hidden space-y-4">
+                                <div>
+                                    <label for="gate_token" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Gate Token</label>
+                                    <div class="flex gap-2">
+                                        <input type="text" name="gate_token" id="gate_token"
+                                               value="{{ campaign.gate_token if campaign and campaign.gate_token else '' }}"
+                                               class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-gray-50 dark:bg-gray-600 text-gray-900 dark:text-white font-mono"
+                                               readonly placeholder="Click generate to create a token">
+                                        <button type="button" onclick="generateGateToken()"
+                                                class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 whitespace-nowrap">
+                                            <i class="fas fa-sync-alt mr-1"></i> Generate
+                                        </button>
+                                    </div>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">The secret value visitors must have in their URL to access the campaign.</p>
+                                </div>
+                                <div>
+                                    <label for="gate_param_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Query Parameter Name</label>
+                                    <input type="text" name="gate_param_name" id="gate_param_name"
+                                           value="{{ campaign.gate_param_name if campaign and campaign.gate_param_name else 'rid' }}"
+                                           class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                           placeholder="rid">
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">The URL parameter name (e.g. "rid" means the URL will be ?rid=TOKEN).</p>
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">When Token Is Missing</label>
+                                    <div class="space-y-3">
+                                        <div class="flex items-center">
+                                            <input id="gate_mode_template" name="gate_mode" type="radio" value="template"
+                                                   {% if not campaign or not campaign.gate_mode or campaign.gate_mode == 'template' %}checked{% endif %}
+                                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                                   onchange="toggleGateMode()">
+                                            <div class="ml-3">
+                                                <label for="gate_mode_template" class="text-sm font-medium text-gray-700 dark:text-gray-300">Show decoy template</label>
+                                                <p class="text-xs text-gray-500 dark:text-gray-400">Serve a fake page to visitors without the token</p>
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center">
+                                            <input id="gate_mode_redirect" name="gate_mode" type="radio" value="redirect"
+                                                   {% if campaign and campaign.gate_mode == 'redirect' %}checked{% endif %}
+                                                   class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                                   onchange="toggleGateMode()">
+                                            <div class="ml-3">
+                                                <label for="gate_mode_redirect" class="text-sm font-medium text-gray-700 dark:text-gray-300">Redirect away</label>
+                                                <p class="text-xs text-gray-500 dark:text-gray-400">302 redirect visitors without the token to another URL</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div id="gate-template-wrap">
+                                    <label for="gate_template_id" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Decoy Template</label>
+                                    <select name="gate_template_id" id="gate_template_id"
+                                            class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                                        <option value="">Select template for decoy page</option>
+                                    </select>
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Template to show visitors who don't have the gate token.</p>
+                                </div>
+                                <div id="gate-redirect-wrap" class="hidden">
+                                    <label for="gate_redirect_url" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Redirect URL</label>
+                                    <input type="text" name="gate_redirect_url" id="gate_redirect_url"
+                                           value="{{ campaign.gate_redirect_url if campaign and campaign.gate_redirect_url else '' }}"
+                                           class="block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                           placeholder="https://example.com">
+                                    <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">URL to redirect visitors who don't have the gate token.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- SSL Configuration (only for inbound campaigns) -->
+                    <div id="ssl-config-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>SSL Configuration</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                               data-tooltip="Configure SSL/TLS encryption for your campaign. SSL encrypts data between visitors and your server.&#10;&#10;Automatic: Let&#39;s Encrypt automatically generates and renews certificates (recommended).&#10;Custom: Upload your own certificate files.&#10;Self-Signed: For testing only, browsers will show security warnings.&#10;Disabled: No encryption (HTTP only, not recommended for production)."></i>
+                        </h4>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
+                                    <span>SSL Mode</span>
+                                    <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                       data-tooltip="Choose how SSL certificates are managed:&#10;&#10;Automatic (Let&#39;s Encrypt): Free, auto-renewing certificates. Best for most use cases. Requires valid domain DNS.&#10;&#10;Custom Certificate: Upload your own certificate and key. Use if you have existing certificates or specific requirements.&#10;&#10;Self-Signed: For testing only. Browsers will show security warnings.&#10;&#10;Disabled: No SSL/TLS. Use HTTP only (not recommended)."></i>
+                                </label>
+                                <div class="space-y-3">
+                                    <div class="flex items-center">
+                                        <input id="ssl_automatic" name="ssl_mode" type="radio" value="automatic"
+                                               {% if not campaign or campaign.ssl_mode == 'automatic' %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                               onchange="toggleSSLOptions()">
+                                        <div class="ml-3">
+                                            <label for="ssl_automatic" class="text-sm font-medium text-gray-700 dark:text-gray-300">Automatic (Let's Encrypt)</label>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">Automatically generate SSL certificates using Let's Encrypt</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-center">
+                                        <input id="ssl_custom" name="ssl_mode" type="radio" value="custom"
+                                               {% if campaign and campaign.ssl_mode == 'custom' %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                               onchange="toggleSSLOptions()">
+                                        <div class="ml-3">
+                                            <label for="ssl_custom" class="text-sm font-medium text-gray-700 dark:text-gray-300">Custom Certificate</label>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">Upload your own SSL certificate and key files</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-center">
+                                        <input id="ssl_self_signed" name="ssl_mode" type="radio" value="self_signed"
+                                               {% if campaign and campaign.ssl_mode == 'self_signed' %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                               onchange="toggleSSLOptions()">
+                                        <div class="ml-3">
+                                            <label for="ssl_self_signed" class="text-sm font-medium text-gray-700 dark:text-gray-300">Self-Signed (Testing)</label>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">Generate self-signed certificate for testing purposes</p>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="flex items-center">
+                                        <input id="ssl_disabled" name="ssl_mode" type="radio" value="disabled"
+                                               {% if campaign and campaign.ssl_mode == 'disabled' %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300"
+                                               onchange="toggleSSLOptions()">
+                                        <div class="ml-3">
+                                            <label for="ssl_disabled" class="text-sm font-medium text-gray-700 dark:text-gray-300">HTTP Only (Disabled)</label>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">Disable SSL/TLS encryption (not recommended for production)</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Custom Domain Input -->
+                            <div>
+                                <label for="custom_domain" class="block text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center gap-2">
+                                    <span>Custom Domain (Optional)</span>
+                                    <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" 
+                                       data-tooltip="Use your own domain instead of the default subdomain.&#10;&#10;Example: Instead of campaign-abc123.localhost, use secure.example.com&#10;&#10;Requirements:&#10;- DNS must point to this server&#10;- SSL certificate must match the domain&#10;- Works best with Automatic or Custom SSL mode&#10;&#10;Leave blank to use default subdomain format."></i>
+                                </label>
+                                <input type="text" name="custom_domain" id="custom_domain"
+                                       value="{% if campaign and campaign.custom_domain %}{{ campaign.custom_domain }}{% endif %}"
+                                       class="mt-1 block w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                       placeholder="secure.example.com">
+                                <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Leave blank to use default subdomain (campaign-{uid}.localhost)</p>
+                            </div>
+                            
+                            <!-- Custom Certificate Upload (hidden by default) -->
+                            <div id="ssl-upload-section" class="hidden space-y-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-md transition-colors duration-200">
+                                <div>
+                                    <label for="ssl_certificate" class="block text-sm font-medium text-gray-700 dark:text-gray-300">SSL Certificate</label>
+                                    <input type="file" name="ssl_certificate" id="ssl_certificate" accept=".pem,.crt,.cer"
+                                           class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upload certificate file in PEM format</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="ssl_private_key" class="block text-sm font-medium text-gray-700 dark:text-gray-300">Private Key</label>
+                                    <input type="file" name="ssl_private_key" id="ssl_private_key" accept=".pem,.key"
+                                           class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upload private key file in PEM format</p>
+                                </div>
+                                
+                                <div>
+                                    <label for="ssl_ca_chain" class="block text-sm font-medium text-gray-700 dark:text-gray-300">CA Chain (Optional)</label>
+                                    <input type="file" name="ssl_ca_chain" id="ssl_ca_chain" accept=".pem,.crt,.cer"
+                                           class="mt-1 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                                    <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upload CA certificate chain if required</p>
+                                </div>
+                                
+                                <div class="bg-yellow-50 border border-yellow-200 rounded-md p-3">
+                                    <div class="flex">
+                                        <i class="fas fa-exclamation-triangle text-yellow-400 mt-0.5"></i>
+                                        <div class="ml-2">
+                                            <h4 class="text-sm font-medium text-yellow-800">Security Notice</h4>
+                                            <p class="text-xs text-yellow-700 mt-1">Uploaded certificates and keys are stored securely with restricted file permissions. Ensure your certificate matches the custom domain specified above.</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-between">
+                    <button type="button" onclick="previousStep()" 
+                            class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50">
+                        <i class="fas fa-arrow-left mr-2"></i>
+                        Previous
+                    </button>
+                    <div class="flex space-x-3">
+                        <button type="button" onclick="saveDraft()" 
+                                class="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50">
+                            <i class="fas fa-save mr-2"></i>
+                            Save as Draft
+                        </button>
+                        <button type="submit" 
+                                class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                            <i class="fas fa-rocket mr-2"></i>
+                            {% if campaign %}Update Campaign{% else %}Create Campaign{% endif %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentStep = 1;
+const totalSteps = 3;
+
+function updateStepIndicators() {
+    for (let i = 1; i <= totalSteps; i++) {
+        const indicator = document.getElementById(`step${i}-indicator`);
+        const progressBar = document.getElementById(`progress-bar-${i}`);
+        
+        if (i < currentStep) {
+            indicator.className = 'step-indicator completed';
+            indicator.innerHTML = '<i class="fas fa-check text-xs"></i>';
+            if (progressBar) progressBar.style.width = '100%';
+        } else if (i === currentStep) {
+            indicator.className = 'step-indicator current';
+            indicator.innerHTML = `<span>${i}</span>`;
+            if (progressBar) progressBar.style.width = '0%';
+        } else {
+            indicator.className = 'step-indicator pending';
+            indicator.innerHTML = `<span>${i}</span>`;
+            if (progressBar) progressBar.style.width = '0%';
+        }
+    }
+}
+
+function showStep(step) {
+    // Hide all steps
+    for (let i = 1; i <= totalSteps; i++) {
+        document.getElementById(`step${i}`).classList.remove('active');
+    }
+    
+    // Show current step
+    document.getElementById(`step${step}`).classList.add('active');
+    currentStep = step;
+    updateStepIndicators();
+}
+
+
+function toggleCampaignTypeFields() {
+    const campaignType = document.querySelector('input[name="campaign_type"]:checked').value;
+    const workflowFields = document.getElementById('workflow-fields');
+    const uidField = document.getElementById('uid-field');
+    const sslConfigSection = document.getElementById('ssl-config-section');
+    const uidInput = document.getElementById('uid');
+    
+    // Get workflow section elements
+    const inboundWorkflows = document.getElementById('inbound-workflows');
+    const outboundWorkflow = document.getElementById('outbound-workflow');
+    
+    const securitySection = document.getElementById('security-settings-section');
+    const custom404Section = document.getElementById('custom-404-section');
+    const mmsSection = document.getElementById('outbound-mms-section');
+    if (campaignType === 'inbound') {
+        // Show inbound-specific fields
+        workflowFields.style.display = 'block';
+        uidField.style.display = 'block';
+        sslConfigSection.style.display = 'block';
+        if (securitySection) securitySection.style.display = 'block';
+        if (custom404Section) custom404Section.classList.remove('hidden');
+        document.getElementById('ua-filter-section').classList.remove('hidden');
+        if (mmsSection) mmsSection.style.display = 'none';
+        uidInput.required = true;
+        const captchaSection = document.getElementById('captcha-section');
+        if (captchaSection) captchaSection.classList.remove('hidden');
+
+        // Show inbound workflows, hide outbound workflow
+        inboundWorkflows.style.display = 'grid';
+        outboundWorkflow.classList.add('hidden');
+        document.getElementById('outbound_workflow_id').required = false;
+        // Clear outbound workflow selection for inbound
+        document.getElementById('outbound_workflow_id').value = '';
+    } else {
+        // Hide inbound-specific fields for outbound campaigns
+        uidField.style.display = 'none';
+        sslConfigSection.style.display = 'none';
+        if (securitySection) securitySection.style.display = 'none';
+        if (custom404Section) custom404Section.classList.add('hidden');
+        document.getElementById('ua-filter-section').classList.add('hidden');
+        if (mmsSection) mmsSection.style.display = 'block';
+        const captchaSection = document.getElementById('captcha-section');
+        if (captchaSection) captchaSection.classList.add('hidden');
+        uidInput.required = false;
+        uidInput.value = '';
+
+        // Show outbound workflow, hide inbound workflows
+        inboundWorkflows.style.display = 'none';
+        outboundWorkflow.classList.remove('hidden');
+        document.getElementById('outbound_workflow_id').required = true;
+        // Clear GET workflow selection for outbound
+        document.getElementById('get_workflow_id').value = '';
+    }
+    toggleMmsUrlField();
+}
+
+function toggleMmsUrlField() {
+    const mmsCheckbox = document.getElementById('is_mms_enabled');
+    const mmsUrlField = document.getElementById('mms-url-field');
+    if (!mmsCheckbox || !mmsUrlField) return;
+    mmsUrlField.style.display = mmsCheckbox.checked ? 'block' : 'none';
+}
+
+function toggleUAFilterSettings() {
+    const enabled = document.getElementById('ua_filter_enabled').checked;
+    const settings = document.getElementById('ua-filter-settings');
+    
+    if (enabled) {
+        settings.classList.remove('hidden');
+        loadTemplatesForUAFilter();
+    } else {
+        settings.classList.add('hidden');
+    }
+}
+
+function toggleCaptchaSettings() {
+    const enabled = document.getElementById('captcha_enabled').checked;
+    const settings = document.getElementById('captcha-settings');
+    if (enabled) {
+        settings.classList.remove('hidden');
+        loadTemplatesForCaptcha();
+    } else {
+        settings.classList.add('hidden');
+    }
+}
+
+function toggleGateSettings() {
+    const enabled = document.getElementById('gate_enabled').checked;
+    const settings = document.getElementById('gate-settings');
+    if (enabled) {
+        settings.classList.remove('hidden');
+        // Auto-generate token if empty
+        const tokenField = document.getElementById('gate_token');
+        if (!tokenField.value) {
+            generateGateToken();
+        }
+        toggleGateMode();
+        loadTemplatesForGate();
+    } else {
+        settings.classList.add('hidden');
+    }
+    updateGatePreview();
+}
+
+function toggleGateMode() {
+    const mode = document.querySelector('input[name="gate_mode"]:checked')?.value || 'template';
+    const templateWrap = document.getElementById('gate-template-wrap');
+    const redirectWrap = document.getElementById('gate-redirect-wrap');
+    if (mode === 'template') {
+        templateWrap.classList.remove('hidden');
+        redirectWrap.classList.add('hidden');
+        loadTemplatesForGate();
+    } else {
+        templateWrap.classList.add('hidden');
+        redirectWrap.classList.remove('hidden');
+    }
+}
+
+function generateGateToken() {
+    const arr = new Uint8Array(12);
+    crypto.getRandomValues(arr);
+    const token = Array.from(arr, b => b.toString(16).padStart(2, '0')).join('').slice(0, 12);
+    document.getElementById('gate_token').value = token;
+    updateGatePreview();
+}
+
+function updateGatePreview() {
+    const preview = document.getElementById('gate-preview');
+    if (!preview) return;
+    const enabled = document.getElementById('gate_enabled').checked;
+    const token = document.getElementById('gate_token').value;
+    const param = document.getElementById('gate_param_name').value || 'rid';
+    if (enabled && token) {
+        preview.textContent = '?' + param + '=' + token;
+    } else {
+        preview.textContent = '';
+    }
+}
+
+function loadTemplatesForGate() {
+    fetch('/templates/api')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('gate_template_id');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select template for decoy page</option>';
+            if (data.success && data.templates) {
+                data.templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.id;
+                    option.textContent = `${template.name} (${template.category || 'uncategorized'})`;
+                    select.appendChild(option);
+                });
+                {% if campaign and getattr(campaign, 'gate_template_id', None) %}
+                select.value = '{{ campaign.gate_template_id }}';
+                {% endif %}
+            }
+        })
+        .catch(err => console.error('Error loading templates for Gate:', err));
+}
+
+function toggleCustom404Settings() {
+    const mode = document.querySelector('input[name="custom_404_mode"]:checked')?.value || 'default';
+    const settings = document.getElementById('custom-404-settings');
+    const bodyWrap = document.getElementById('custom-404-body-wrap');
+    const templateWrap = document.getElementById('custom-404-template-wrap');
+    if (mode === 'default') {
+        settings.classList.add('hidden');
+        if (bodyWrap) bodyWrap.classList.add('hidden');
+        if (templateWrap) templateWrap.classList.add('hidden');
+    } else {
+        settings.classList.remove('hidden');
+        if (mode === 'body') {
+            if (bodyWrap) bodyWrap.classList.remove('hidden');
+            if (templateWrap) templateWrap.classList.add('hidden');
+        } else {
+            if (bodyWrap) bodyWrap.classList.add('hidden');
+            if (templateWrap) templateWrap.classList.remove('hidden');
+            loadTemplatesForCustom404();
+        }
+    }
+}
+
+function loadTemplatesForCustom404() {
+    fetch('/templates/api')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('custom_404_template_id');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select template for 404 page</option>';
+            if (data.success && data.templates) {
+                data.templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.id;
+                    option.textContent = `${template.name} (${template.category || 'uncategorized'})`;
+                    select.appendChild(option);
+                });
+                {% if campaign and campaign.config.get('custom_404_template_id') %}
+                select.value = '{{ campaign.config.get("custom_404_template_id") }}';
+                {% endif %}
+            }
+        })
+        .catch(err => console.error('Error loading templates for Custom 404:', err));
+}
+
+function loadTemplatesForCaptcha() {
+    fetch('/templates/api')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('captcha_template_id');
+            if (!select) return;
+            select.innerHTML = '<option value="">Select template for CAPTCHA page</option>';
+            if (data.success && data.templates) {
+                data.templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.id;
+                    option.textContent = `${template.name} (${template.category || 'uncategorized'})`;
+                    select.appendChild(option);
+                });
+                {% if campaign and getattr(campaign, 'captcha_template_id', None) %}
+                select.value = '{{ campaign.captcha_template_id }}';
+                {% endif %}
+            }
+        })
+        .catch(err => console.error('Error loading templates for CAPTCHA:', err));
+}
+
+function toggleSSLOptions() {
+    const customRadio = document.getElementById('ssl_custom');
+    const uploadSection = document.getElementById('ssl-upload-section');
+    
+    if (customRadio.checked) {
+        uploadSection.classList.remove('hidden');
+    } else {
+        uploadSection.classList.add('hidden');
+    }
+}
+
+function nextStep() {
+    if (validateCurrentStep() && currentStep < totalSteps) {
+        showStep(currentStep + 1);
+    }
+}
+
+function previousStep() {
+    if (currentStep > 1) {
+        showStep(currentStep - 1);
+    }
+}
+
+function validateCurrentStep() {
+    const step = document.getElementById(`step${currentStep}`);
+    const requiredFields = step.querySelectorAll('[required]');
+    
+    for (let field of requiredFields) {
+        if (!field.value.trim()) {
+            field.focus();
+            field.classList.add('border-red-500');
+            return false;
+        } else {
+            field.classList.remove('border-red-500');
+        }
+    }
+    
+    return true;
+}
+
+function generateUID() {
+    const uid = Math.random().toString(36).substring(2, 10);
+    document.getElementById('uid').value = uid;
+    document.getElementById('uid-preview').textContent = uid;
+}
+
+function loadTemplates() {
+    fetch('/templates/api')  // Changed URL
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('template_id');
+            select.innerHTML = '<option value="">Choose a template</option>';
+            
+            if (data.success && data.templates) {  // Added success check
+                data.templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.id;
+                    option.textContent = `${template.name} (${template.category})`;
+                    select.appendChild(option);
+                });
+                
+                // If editing campaign, set appropriate template source and values
+                {% if campaign %}
+                {% if campaign.template_id %}
+                select.value = '{{ campaign.template_id }}';
+                document.getElementById('existing-template').checked = true;
+                loadTemplateVariables(); // Load variables for selected template
+                {% elif campaign.template_html %}
+                document.getElementById('custom-template').checked = true;
+                document.getElementById('custom_html').value = {{ campaign.template_html | tojson }};
+                document.getElementById('existing-templates').classList.add('hidden');
+                document.getElementById('custom-template-area').classList.remove('hidden');
+                {% else %}
+                document.getElementById('workflow-defined-template').checked = true;
+                document.getElementById('existing-templates').classList.add('hidden');
+                document.getElementById('custom-template-area').classList.add('hidden');
+                {% endif %}
+                {% endif %}
+            }
+        })
+        .catch(error => {
+            console.error('Error loading templates:', error);
+        });
+}
+
+function loadTemplatesForUAFilter() {
+    fetch('/templates/api')
+        .then(response => response.json())
+        .then(data => {
+            const select = document.getElementById('ua_blocked_template_id');
+            select.innerHTML = '<option value="">Select template to show when blocked</option>';
+            
+            if (data.success && data.templates) {
+                data.templates.forEach(template => {
+                    const option = document.createElement('option');
+                    option.value = template.id;
+                    option.textContent = `${template.name} (${template.category})`;
+                    select.appendChild(option);
+                });
+                
+                // If editing campaign, set the blocked template
+                {% if campaign and campaign.ua_blocked_template_id %}
+                select.value = '{{ campaign.ua_blocked_template_id }}';
+                {% endif %}
+            }
+        })
+        .catch(error => {
+            console.error('Error loading templates for UA filter:', error);
+        });
+}
+
+function loadTemplateVariables() {
+    const templateId = document.getElementById('template_id').value;
+    const variablesDiv = document.getElementById('template-variables');
+    const container = document.getElementById('variables-container');
+    
+    if (!templateId) {
+        variablesDiv.classList.add('hidden');
+        return;
+    }
+    
+    fetch(`/templates/api/${templateId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.template && data.template.variables && data.template.variables.length > 0) {
+                container.innerHTML = '';
+                
+                data.template.variables.forEach(variable => {
+                    const div = document.createElement('div');
+                    div.className = 'grid grid-cols-1 sm:grid-cols-3 gap-4 items-center';
+                    
+                    const label = document.createElement('label');
+                    label.className = 'text-sm font-medium text-gray-700 dark:text-gray-300';
+                    label.textContent = variable.name;
+                    
+                    const input = document.createElement('input');
+                    input.type = variable.type === 'email' ? 'email' : 
+                                 variable.type === 'url' ? 'url' : 
+                                 variable.type === 'number' ? 'number' : 'text';
+                    input.name = `template_var_${variable.name}`;
+                    input.id = `template_var_${variable.name}`;
+                    input.placeholder = variable.description || `Enter ${variable.name}`;
+                    input.className = 'sm:col-span-2 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white';
+                    
+                    div.appendChild(label);
+                    div.appendChild(input);
+                    container.appendChild(div);
+                });
+                
+                variablesDiv.classList.remove('hidden');
+            } else {
+                variablesDiv.classList.add('hidden');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading template variables:', error);
+            variablesDiv.classList.add('hidden');
+        });
+}
+
+function saveDraft() {
+    const formData = new FormData(document.getElementById('campaignForm'));
+    formData.append('status', 'draft');
+    
+    submitForm(formData, 'Campaign saved as draft');
+}
+
+function submitForm(formData, successMessage = 'Campaign created successfully') {
+    const url = {% if campaign %}'/api/campaigns/{{ campaign.id }}'{% else %}'/api/campaigns'{% endif %};
+    const method = {% if campaign %}'PUT'{% else %}'POST'{% endif %};
+
+    // Convert FormData to plain object with proper config structure
+    const data = {};
+    const config = {};
+
+    // Extract template variables
+    const templateVariables = {};
+    
+    for (let [key, value] of formData.entries()) {
+        // Handle template variables
+        if (key.startsWith('template_var_')) {
+            const varName = key.replace('template_var_', '');
+            if (value && value !== '') {
+                templateVariables[varName] = value;
+            }
+            continue;
+        }
+        
+        // SSL mode, custom domain, UA filter, CAPTCHA, MMS, and gate fields are direct fields (or config for keys)
+        if (key === 'ssl_mode' || key === 'custom_domain' || key === 'ua_filter_enabled' || key === 'ua_deny_list' || key === 'ua_blocked_template_id' || key === 'captcha_enabled' || key === 'captcha_template_id' || key === 'is_mms_enabled' ||
+            key === 'gate_enabled' || key === 'gate_token' || key === 'gate_param_name' ||
+            key === 'gate_mode' || key === 'gate_template_id' || key === 'gate_redirect_url') {
+            if (key === 'ua_filter_enabled' || key === 'captcha_enabled' || key === 'is_mms_enabled' || key === 'gate_enabled') {
+                data[key] = value === 'on' ? true : false;
+            } else if (key === 'ua_blocked_template_id' || key === 'captcha_template_id' || key === 'gate_template_id') {
+                if (value && value !== '') {
+                    data[key] = parseInt(value);
+                } else {
+                    data[key] = null;
+                }
+            } else if (key === 'ua_deny_list') {
+                data[key] = value ? value.split('\n').map(s => s.trim()).filter(s => s) : [];
+            } else if (value && value !== '') {
+                data[key] = value;
+            }
+            continue;
+        }
+        if (key === 'captcha_site_key' || key === 'captcha_secret_key') {
+            if (value && value !== '') {
+                config[key] = value;
+            }
+            continue;
+        }
+        
+        // Configuration fields go into config object
+        if (['require_https', 'enable_rate_limiting'].includes(key)) {
+            // Only add non-empty values to config
+            if (value && value !== '') {
+                config[key] = value === 'on' ? true : value;
+            }
+        } else {
+            // Main campaign fields
+            if (key === 'template_id' && value) {
+                data[key] = parseInt(value); // Convert to integer
+            } else if (value !== '') {
+                data[key] = value;
+            }
+        }
+    }
+    
+    // Handle template source selection
+    const templateSource = formData.get('template_source');
+    if (templateSource === 'custom') {
+        const customHtml = formData.get('custom_html');
+        if (customHtml && customHtml.trim() !== '') {
+            data.template_html = customHtml;
+            delete data.template_id; // Don't send template_id if using custom HTML
+        }
+    } else if (templateSource === 'workflow_defined') {
+        data.template_id = null;
+        data.template_html = null;
+    }
+    
+    // Add template variables to config
+    if (Object.keys(templateVariables).length > 0) {
+        config.template_variables = templateVariables;
+    }
+
+    // Get campaign type (needed for custom 404 and workflow blocks)
+    const campaignType = formData.get('campaign_type') || 'inbound';
+    data.campaign_type = campaignType;
+
+    // Custom 404 page configuration (inbound only)
+    if (campaignType === 'inbound') {
+        const custom404Mode = formData.get('custom_404_mode') || 'default';
+        if (custom404Mode === 'default') {
+            delete config.custom_404_body;
+            delete config.custom_404_template_id;
+        } else if (custom404Mode === 'body') {
+            config.custom_404_body = (formData.get('custom_404_body_text') || '').trim();
+            delete config.custom_404_template_id;
+        } else if (custom404Mode === 'template') {
+            const tid = formData.get('custom_404_template_id');
+            config.custom_404_template_id = tid && tid !== '' ? parseInt(tid) : null;
+            delete config.custom_404_body;
+        }
+    } else {
+        delete config.custom_404_body;
+        delete config.custom_404_template_id;
+    }
+
+  // Parse variables JSON
+  const variablesText = formData.get('variables') || '{}';
+  try {
+      data.variables = JSON.parse(variablesText);
+  } catch (e) {
+      showToast('Invalid JSON in variables field', 'error');
+      return;
+  }
+  
+  // Get workflow IDs based on campaign type
+  if (campaignType === 'inbound') {
+      // Inbound campaigns: always send both workflow IDs (even if empty)
+      const getWorkflowId = formData.get('get_workflow_id');
+      const postWorkflowId = formData.get('post_workflow_id');
+      
+      // Always include both fields, even if empty (to allow clearing)
+      if (getWorkflowId) {
+          data.get_workflow_id = parseInt(getWorkflowId);
+      } else {
+          data.get_workflow_id = null; // Explicitly set to null to clear
+      }
+      if (postWorkflowId) {
+          data.post_workflow_id = parseInt(postWorkflowId);
+      } else {
+          data.post_workflow_id = null; // Explicitly set to null to clear
+      }
+      
+      // Validate workflows for inbound campaigns
+      if (!data.get_workflow_id && !data.post_workflow_id) {
+          showToast('Inbound campaigns require at least one workflow (GET or POST)', 'error');
+          return;
+      }
+      // Ensure UA filter fields are always sent for inbound (unchecked checkbox omits from formData)
+      if (!('ua_filter_enabled' in data)) data.ua_filter_enabled = false;
+      if (!('ua_deny_list' in data)) data.ua_deny_list = [];
+      if (!('ua_blocked_template_id' in data)) data.ua_blocked_template_id = null;
+      // is_mms_enabled is outbound-only — clear for inbound
+      delete data.is_mms_enabled;
+      // Ensure gate fields are always sent for inbound
+      if (!('gate_enabled' in data)) data.gate_enabled = false;
+  } else {
+      // Outbound campaigns: single workflow field
+      const outboundWorkflowId = formData.get('outbound_workflow_id');
+      if (outboundWorkflowId) {
+          data.post_workflow_id = parseInt(outboundWorkflowId);
+      } else {
+          data.post_workflow_id = null; // Explicitly set to null to clear
+      }
+      // Always clear GET workflow for outbound
+      data.get_workflow_id = null;
+
+      // Clear inbound-specific fields for outbound campaigns
+      delete data.uid;
+      delete data.ssl_mode;
+      delete data.ua_filter_enabled;
+      delete data.ua_deny_list;
+      delete data.ua_blocked_template_id;
+
+      // Gate fields are inbound-only
+      delete data.gate_enabled;
+      delete data.gate_token;
+      delete data.gate_param_name;
+      delete data.gate_mode;
+      delete data.gate_template_id;
+      delete data.gate_redirect_url;
+
+      // Default unchecked MMS checkbox to false; clear domain when MMS off
+      if (!('is_mms_enabled' in data)) data.is_mms_enabled = false;
+      if (!data.is_mms_enabled) {
+          delete data.custom_domain;
+      }
+  }
+
+  // Set the config object
+  data.config = config;
+
+      // Get CSRF token from meta tag or form
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || 
+                       document.querySelector('input[name="csrf_token"]')?.value;
+      
+      const headers = {
+          'Content-Type': 'application/json'
+      };
+      
+      // Add CSRF token to headers if available
+      if (csrfToken) {
+          headers['X-CSRFToken'] = csrfToken;
+      }
+      
+      fetch(url, {
+          method: method,
+          headers: headers,
+          body: JSON.stringify(data)  // Now this works correctly
+      })
+      .then(response => {
+          if (response.ok) {
+              return response.json();
+          } else {
+              return response.json().then(err => Promise.reject(err));
+          }
+      })
+      .then(data => {
+          showToast(successMessage, 'success');
+          setTimeout(() => {
+              window.location.href = '/campaigns/' + data.id;
+          }, 500);
+      })
+      .catch(error => {
+          console.error('Error:', error);
+          showToast('Error: ' + (error.error || error.message || 'Unknown error occurred'), 'error');
+      });
+  }
+
+// These functions are no longer needed - campaign types removed
+// Settings are now configured in workflows
+function togglePasswordSecuritySettings() {
+    // Deprecated - settings now in workflows
+}
+
+function toggleGitHubConfigSettings() {
+    // Deprecated - settings now in workflows
+}
+
+// Event listeners
+document.getElementById('campaignForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    if (!validateCurrentStep()) {
+        return;
+    }
+    
+    const formData = new FormData(this);
+    formData.append('status', 'active');
+    
+    submitForm(formData);
+});
+
+document.getElementById('uid').addEventListener('input', function() {
+    document.getElementById('uid-preview').textContent = this.value || 'your-uid';
+});
+
+document.getElementById('gate_token').addEventListener('input', updateGatePreview);
+document.getElementById('gate_param_name').addEventListener('input', updateGatePreview);
+
+document.querySelectorAll('input[name="template_source"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const existingTemplates = document.getElementById('existing-templates');
+        const customTemplateArea = document.getElementById('custom-template-area');
+        
+        if (this.value === 'existing') {
+            existingTemplates.classList.remove('hidden');
+            customTemplateArea.classList.add('hidden');
+        } else if (this.value === 'custom') {
+            existingTemplates.classList.add('hidden');
+            customTemplateArea.classList.remove('hidden');
+        } else if (this.value === 'workflow_defined') {
+            existingTemplates.classList.add('hidden');
+            customTemplateArea.classList.add('hidden');
+        }
+    });
+});
+
+// Campaign type change handler
+// Campaign type selector removed - workflows are used instead
+// Event listeners for workflow selection can be added here if needed
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    updateStepIndicators();
+    loadTemplates();
+    
+    // Initialize campaign type fields visibility
+    toggleCampaignTypeFields();
+    
+    // Initialize UA filter settings visibility
+    {% if campaign %}
+    {% if hasattr(campaign, 'ua_filter_enabled') and campaign.ua_filter_enabled %}
+    toggleUAFilterSettings();
+    {% endif %}
+    {% if getattr(campaign, 'captcha_enabled', False) %}
+    toggleCaptchaSettings();
+    {% endif %}
+    {% if getattr(campaign, 'gate_enabled', False) %}
+    toggleGateSettings();
+    {% endif %}
+    {% endif %}
+    
+    toggleCustom404Settings();
+    
+    // Initialize password security settings visibility
+    togglePasswordSecuritySettings();
+    toggleGitHubConfigSettings();
+    
+    // Generate UID if creating new inbound campaign
+    {% if not campaign %}
+    const campaignType = document.querySelector('input[name="campaign_type"]:checked').value;
+    if (campaignType === 'inbound') {
+        generateUID();
+    }
+    {% endif %}
+    
+    // Pre-populate form if editing existing campaign
+    {% if campaign and campaign.config %}
+    const config = {{ campaign.config | tojson }};
+    
+    // Show SSL options based on mode
+    {% if campaign.ssl_mode %}
+    toggleSSLOptions();
+    {% endif %}
+    
+    // Disable require_https if SSL mode is disabled
+    {% if campaign.ssl_mode == 'disabled' %}
+    const requireHttpsCheckbox = document.getElementById('require_https');
+    if (requireHttpsCheckbox) {
+        requireHttpsCheckbox.checked = false;
+        requireHttpsCheckbox.disabled = true;
+    }
+    {% endif %}
+    {% endif %}
+    
+    // Add event listener to disable require_https when SSL mode is set to disabled
+    document.querySelectorAll('input[name="ssl_mode"]').forEach(radio => {
+        radio.addEventListener('change', function() {
+            const requireHttpsCheckbox = document.getElementById('require_https');
+            if (this.value === 'disabled') {
+                requireHttpsCheckbox.checked = false;
+                requireHttpsCheckbox.disabled = true;
+            } else {
+                requireHttpsCheckbox.disabled = false;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

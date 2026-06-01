@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block title %}{{ sending_workflow.name }} - Reel v2{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8" x-data="sendingWorkflowDetail()" x-init="init()">
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold dark:text-white">{{ sending_workflow.name }}</h1>
+            <p class="text-gray-600 dark:text-gray-400 mt-1">{{ sending_workflow.description or 'No description' }}</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{{ url_for('admin.sending_workflows') }}" 
+               class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                Back to Workflows
+            </a>
+            <a href="{{ url_for('admin.edit_sending_workflow', workflow_id=sending_workflow.id) }}" 
+               class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                Edit
+            </a>
+            <button @click="executeWorkflow()" 
+                    x-show="workflow.status !== 'running' && workflow.workflow_id"
+                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                Execute
+            </button>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Status</div>
+            <div class="text-2xl font-bold mt-1">
+                <span class="px-2 py-1 text-xs rounded-full"
+                      :class="{
+                          'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300': workflow.status === 'draft',
+                          'bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200': workflow.status === 'scheduled',
+                          'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200': workflow.status === 'running',
+                          'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200': workflow.status === 'completed',
+                          'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200': workflow.status === 'failed'
+                      }"
+                      x-text="workflow.status"></span>
+            </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Total</div>
+            <div class="text-2xl font-bold mt-1 dark:text-white" x-text="stats.total || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Sent</div>
+            <div class="text-2xl font-bold mt-1 text-green-600 dark:text-green-400" x-text="stats.sent || 0"></div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div class="text-sm text-gray-600 dark:text-gray-400">Failed</div>
+            <div class="text-2xl font-bold mt-1 text-red-600 dark:text-red-400" x-text="stats.failed || 0"></div>
+        </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div x-show="stats.total > 0" class="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6">
+        <div class="flex justify-between mb-2">
+            <span class="text-sm font-medium dark:text-white">Progress</span>
+            <span class="text-sm text-gray-600 dark:text-gray-400" 
+                  x-text="`${stats.sent || 0} / ${stats.total || 0} (${Math.round((stats.sent || 0) / (stats.total || 1) * 100)}%)`"></span>
+        </div>
+        <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
+            <div class="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                 :style="`width: ${Math.round((stats.sent || 0) / (stats.total || 1) * 100)}%`"></div>
+        </div>
+    </div>
+
+    <!-- No workflow graph (legacy form-only) -->
+    <div x-show="!workflow.workflow_id" class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-6 mb-6">
+        <p class="text-amber-800 dark:text-amber-200 mb-4">
+            This workflow has no graph. Create a new sending workflow from the Workflow builder.
+        </p>
+        <a href="{{ url_for('admin.new_workflow', type='sending') }}" 
+           class="inline-block px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+            New Sending Workflow (Workflow builder)
+        </a>
+    </div>
+
+    <!-- Workflow Info -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+        <!-- Configuration -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h2 class="text-xl font-bold mb-4 dark:text-white">Configuration</h2>
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Campaign</dt>
+                    <dd class="mt-1 text-sm dark:text-white">{{ sending_workflow.campaign.name if sending_workflow.campaign else '—' }}</dd>
+                </div>
+                <div x-show="workflow.workflow_id">
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Workflow graph</dt>
+                    <dd class="mt-1">
+                        <a :href="'/workflows/' + workflow.workflow_id" 
+                           class="text-indigo-600 dark:text-indigo-400 hover:underline">
+                            View workflow graph
+                        </a>
+                    </dd>
+                </div>
+            </dl>
+        </div>
+
+        <!-- Execution Info -->
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h2 class="text-xl font-bold mb-4 dark:text-white">Execution Info</h2>
+            <dl class="space-y-3">
+                <div>
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Created</dt>
+                    <dd class="mt-1 text-sm dark:text-white" x-text="formatDate(workflow.created_at)"></dd>
+                </div>
+                <div x-show="workflow.started_at">
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Started</dt>
+                    <dd class="mt-1 text-sm dark:text-white" x-text="formatDate(workflow.started_at)"></dd>
+                </div>
+                <div x-show="workflow.completed_at">
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</dt>
+                    <dd class="mt-1 text-sm dark:text-white" x-text="formatDate(workflow.completed_at)"></dd>
+                </div>
+                <div x-show="workflow.scheduled_at">
+                    <dt class="text-sm font-medium text-gray-600 dark:text-gray-400">Scheduled</dt>
+                    <dd class="mt-1 text-sm dark:text-white" x-text="formatDate(workflow.scheduled_at)"></dd>
+                </div>
+            </dl>
+        </div>
+    </div>
+
+    <!-- Email Jobs -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div class="p-6 border-b border-gray-200 dark:border-gray-700">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-bold dark:text-white">Email Jobs</h2>
+                <div class="flex gap-2">
+                    <select x-model="jobFilters.status" @change="loadJobs()"
+                            class="px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                        <option value="">All Statuses</option>
+                        <option value="pending">Pending</option>
+                        <option value="sent">Sent</option>
+                        <option value="failed">Failed</option>
+                        <option value="retrying">Retrying</option>
+                    </select>
+                    <button @click="loadJobs()" class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div x-show="loadingJobs" class="p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+        </div>
+
+        <div x-show="!loadingJobs && jobs.length === 0" class="p-8 text-center text-gray-500">
+            No email jobs found.
+        </div>
+
+        <div x-show="!loadingJobs && jobs.length > 0" class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Email</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Sent At</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Error</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Retries</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <template x-for="job in jobs" :key="job.id">
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="px-6 py-4 text-sm dark:text-white" x-text="job.target_email"></td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 text-xs rounded-full"
+                                      :class="{
+                                          'bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200': job.status === 'pending',
+                                          'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200': job.status === 'sent',
+                                          'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200': job.status === 'failed',
+                                          'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200': job.status === 'retrying'
+                                      }"
+                                      x-text="job.status"></span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300" x-text="formatDate(job.sent_at)"></td>
+                            <td class="px-6 py-4 text-sm text-red-600 dark:text-red-400" x-text="job.error_message || '-'"></td>
+                            <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300" x-text="job.retry_count || 0"></td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Job Pagination -->
+        <div x-show="!loadingJobs && jobPagination.pages > 1" class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div class="text-sm text-gray-600 dark:text-gray-400">
+                Showing <span x-text="((jobPagination.page - 1) * jobPagination.per_page) + 1"></span> to 
+                <span x-text="Math.min(jobPagination.page * jobPagination.per_page, jobPagination.total)"></span> of 
+                <span x-text="jobPagination.total"></span> jobs
+            </div>
+            <div class="flex gap-2">
+                <button @click="changeJobPage(jobPagination.page - 1)" 
+                        :disabled="jobPagination.page <= 1"
+                        class="px-3 py-1 border rounded disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    Previous
+                </button>
+                <button @click="changeJobPage(jobPagination.page + 1)" 
+                        :disabled="jobPagination.page >= jobPagination.pages"
+                        class="px-3 py-1 border rounded disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    Next
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sendingWorkflowDetail() {
+    return {
+        workflowId: {{ sending_workflow.id }},
+        workflow: {% if sending_workflow %}{{ sending_workflow.to_dict()|tojson }}{% else %}{}{% endif %},
+        stats: {},
+        jobs: [],
+        loadingJobs: false,
+        jobPagination: {
+            page: 1,
+            per_page: 50,
+            total: 0,
+            pages: 0
+        },
+        jobFilters: {
+            status: ''
+        },
+        
+        async init() {
+            await Promise.all([
+                this.loadStats(),
+                this.loadJobs()
+            ]);
+            
+            // Auto-refresh if workflow is running
+            if (this.workflow.status === 'running') {
+                setInterval(() => {
+                    this.loadStats();
+                    this.loadJobs();
+                }, 5000); // Refresh every 5 seconds
+            }
+        },
+        
+        async loadStats() {
+            try {
+                const response = await fetch(`/api/sending-workflows/${this.workflowId}/stats`);
+                const data = await response.json();
+                this.stats = data;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        },
+        
+        async loadJobs() {
+            this.loadingJobs = true;
+            try {
+                const params = new URLSearchParams({
+                    page: this.jobPagination.page,
+                    per_page: this.jobPagination.per_page
+                });
+                
+                if (this.jobFilters.status) {
+                    params.append('status', this.jobFilters.status);
+                }
+                
+                const response = await fetch(`/api/sending-workflows/${this.workflowId}/jobs?${params}`);
+                const data = await response.json();
+                
+                this.jobs = data.jobs || [];
+                this.jobPagination = data.pagination || this.jobPagination;
+            } catch (error) {
+                console.error('Error loading jobs:', error);
+            } finally {
+                this.loadingJobs = false;
+            }
+        },
+        
+        changeJobPage(page) {
+            if (page >= 1 && page <= this.jobPagination.pages) {
+                this.jobPagination.page = page;
+                this.loadJobs();
+            }
+        },
+        
+        async executeWorkflow() {
+            const confirmed = await showConfirm('Execute this sending workflow?', 'Execute Workflow');
+            if (!confirmed) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sending-workflows/${this.workflowId}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    showToast('Workflow execution started', 'success');
+                    this.workflow.status = 'running';
+                    await this.loadStats();
+                    await this.loadJobs();
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to execute workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error executing workflow:', error);
+                showToast('Error executing workflow', 'error');
+            }
+        },
+        
+        formatDate(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+    };
+}
+</script>
+{% endblock %}
+

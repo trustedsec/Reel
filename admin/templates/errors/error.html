@@ -1,0 +1,37 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}{{ error.status_code if error else 'Error' }}{% endblock %}
+
+{% block error_title %}
+{% if error %}
+    Error {{ error.status_code }}
+{% else %}
+    Application Error
+{% endif %}
+{% endblock %}
+
+{% block error_message %}
+{% if error %}
+    {{ error.message or error.description }}
+{% else %}
+    {{ error_message or 'An unexpected error occurred' }}
+{% endif %}
+{% endblock %}
+
+{% block error_details %}
+{% if error %}
+<div class="text-sm text-gray-500 mb-4">
+    <p>Error Code: {{ error.status_code }}</p>
+    {% if error.errors %}
+    <div class="mt-2 text-left">
+        <p class="font-medium">Details:</p>
+        <ul class="list-disc list-inside mt-1">
+        {% for error_detail in error.errors %}
+            <li>{{ error_detail }}</li>
+        {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

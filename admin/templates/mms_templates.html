@@ -1,0 +1,859 @@
+{% extends "base.html" %}
+
+{% block title %}MMS Card Templates - Reel v2 Admin{% endblock %}
+
+{% block extra_css %}
+<style>
+    .color-swatch {
+        display: inline-block;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: 1px solid #d1d5db;
+        vertical-align: middle;
+    }
+    .dark .color-swatch {
+        border-color: #4b5563;
+    }
+    .color-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .color-input-wrapper input[type="color"] {
+        -webkit-appearance: none;
+        width: 40px;
+        height: 32px;
+        border: 1px solid #d1d5db;
+        border-radius: 4px;
+        padding: 2px;
+        cursor: pointer;
+        background: transparent;
+    }
+    .dark .color-input-wrapper input[type="color"] {
+        border-color: #4b5563;
+    }
+    .preview-container img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+    }
+    .dark .preview-container img {
+        border-color: #4b5563;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div x-data="mmsCardManager()" x-init="init()">
+    <div class="space-y-6">
+        <!-- Header -->
+        <div class="md:flex md:items-center md:justify-between">
+            <div class="flex-1 min-w-0">
+                <h2 class="text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                    MMS Card Templates
+                </h2>
+                <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                    Manage branded MMS card templates for SMS/MMS campaigns
+                </p>
+            </div>
+            <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+                <button @click="openCreateModal()"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors duration-200">
+                    <i class="fas fa-plus mr-2"></i>
+                    Create Template
+                </button>
+                <button @click="loadConfigs()"
+                        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                    <i class="fas fa-sync-alt mr-2"></i>
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div x-show="loading" class="flex justify-center py-12">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 dark:border-blue-400"></div>
+        </div>
+
+        <!-- Empty State -->
+        <div x-show="!loading && configs.length === 0" class="text-center py-12">
+            <i class="fas fa-image text-gray-400 dark:text-gray-500 text-6xl mb-4"></i>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">No MMS card templates</h3>
+            <p class="text-gray-500 dark:text-gray-400 mb-4">Create your first branded card template to get started</p>
+            <button @click="openCreateModal()"
+                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors duration-200">
+                <i class="fas fa-plus mr-2"></i>
+                Create Template
+            </button>
+        </div>
+
+        <!-- Cards Grid -->
+        <div x-show="!loading && configs.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <template x-for="config in configs" :key="config.id || config._key">
+                <div class="bg-white dark:bg-gray-800 shadow rounded-lg overflow-hidden transition-colors duration-200">
+                    <!-- Preview Thumbnail -->
+                    <div class="bg-gray-100 dark:bg-gray-700 flex items-center justify-center" style="height: 200px;">
+                        <img x-show="config._previewUrl" :src="config._previewUrl" alt="Card preview"
+                             class="w-full h-full object-cover object-top">
+                        <div x-show="!config._previewUrl" class="text-gray-400 dark:text-gray-500 text-center">
+                            <i class="fas fa-image text-3xl mb-1"></i>
+                            <p class="text-xs">Loading preview...</p>
+                        </div>
+                    </div>
+
+                    <div class="p-5">
+                        <!-- Card Header -->
+                        <div class="mb-3">
+                            <h3 class="text-lg font-medium text-gray-900 dark:text-white truncate" x-text="config.id || config._key"></h3>
+                            <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" x-text="config.company_name || 'No company name'"></p>
+                        </div>
+
+                        <!-- Color Swatches -->
+                        <div class="flex items-center space-x-3 mb-3">
+                            <div class="flex items-center space-x-1">
+                                <span class="color-swatch" :style="'background-color:' + (config.colors && config.colors.primary ? config.colors.primary : '#3B82F6')"></span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400">Primary</span>
+                            </div>
+                            <div class="flex items-center space-x-1">
+                                <span class="color-swatch" :style="'background-color:' + (config.colors && config.colors.accent ? config.colors.accent : '#10B981')"></span>
+                                <span class="text-xs text-gray-500 dark:text-gray-400">Accent</span>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex space-x-2 pt-3 border-t border-gray-200 dark:border-gray-700">
+                        <button @click="openEditModal(config)"
+                                class="flex-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white text-sm font-medium rounded transition-colors duration-200">
+                            <i class="fas fa-edit mr-1"></i> Edit
+                        </button>
+                        <button @click="confirmDelete(config)"
+                                class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded transition-colors duration-200">
+                            <i class="fas fa-trash mr-1"></i> Delete
+                        </button>
+                    </div>
+                    </div>
+                </div>
+            </template>
+        </div>
+    </div>
+
+    <!-- Create/Edit Modal -->
+    <div x-show="showModal"
+         x-cloak
+         x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50"
+         @click.self="closeModal()">
+        <div class="relative top-4 mx-auto p-5 border w-11/12 max-w-3xl shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200 mb-8">
+            <!-- Modal Header -->
+            <div class="mb-6 flex items-start justify-between">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white" x-text="isEditing ? 'Edit Template' : 'Create Template'"></h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-1" x-text="isEditing ? 'Update the MMS card template configuration' : 'Configure a new branded MMS card template'"></p>
+                </div>
+                <button @click="closeModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+
+            <!-- Form -->
+            <form @submit.prevent="saveConfig()">
+                <div class="space-y-5">
+                    <!-- ID -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Template ID</label>
+                        <input type="text" x-model="form.id"
+                               :disabled="isEditing"
+                               :class="isEditing ? 'bg-gray-100 dark:bg-gray-600 cursor-not-allowed' : ''"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. microsoft-it-dept"
+                               required>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Alphanumeric, hyphens, and underscores only. Cannot be changed after creation.</p>
+                    </div>
+
+                    <!-- Render Mode -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Render Mode</label>
+                        <div class="flex space-x-4">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="radio" x-model="form.render_mode" value="pillow"
+                                       class="text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700 dark:text-gray-300">Classic (structured fields)</span>
+                            </label>
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="radio" x-model="form.render_mode" value="html"
+                                       class="text-blue-600 focus:ring-blue-500">
+                                <span class="text-sm text-gray-700 dark:text-gray-300">HTML Template</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- HTML Template Editor (shown when render_mode is html) -->
+                    <div x-show="form.render_mode === 'html'" x-transition>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">HTML Template</label>
+                        <textarea x-model="form.html_template" rows="16"
+                                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono text-sm"
+                                  placeholder="Enter HTML/CSS template with Jinja2 syntax..."></textarea>
+                        <div class="mt-2 flex items-center space-x-3">
+                            <button type="button" @click="loadDefaultTemplate()"
+                                    class="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                <i class="fas fa-file-code mr-1"></i> Load default template
+                            </button>
+                        </div>
+                        <div class="mt-2 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-md text-xs text-gray-600 dark:text-gray-400">
+                            {% raw %}
+                            <p class="font-medium mb-1">Available variables:</p>
+                            <p class="font-mono">{{ fn }}, {{ ln }}, {{ dc }}, {{ em }}, {{ url }}, {{ company_name }}, {{ heading }}, {{ body }}, {{ colors.primary }}, {{ colors.accent }}</p>
+                            <p class="font-medium mt-2 mb-1">Image helpers (return data: URIs for &lt;img src=""&gt;):</p>
+                            <p class="font-mono">{{ qr_code(url) }}, {{ qr_code(dc, box_size=8) }}</p>
+                            <p class="font-mono">{{ text_image(dc, font_size=48) }}</p>
+                            <p class="font-mono">{{ logo(logo_path) }}</p>
+                            <p class="font-medium mt-2 mb-1">Jinja2 conditionals:</p>
+                            <p class="font-mono">{% if dc %} ... {% endif %}</p>
+                            {% endraw %}
+                        </div>
+                    </div>
+
+                    <!-- Structured fields (shown when render_mode is pillow) -->
+                    <div x-show="form.render_mode === 'pillow'" x-transition>
+
+                    <!-- Company Name -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Company Name</label>
+                        <input type="text" x-model="form.company_name"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. Microsoft">
+                    </div>
+
+                    <!-- Department -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Department</label>
+                        <input type="text" x-model="form.department"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. IT Security">
+                    </div>
+
+                    <!-- Heading -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Heading</label>
+                        <input type="text" x-model="form.heading"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. Action Required, &#123;&#123;fn&#125;&#125;">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Supports variables: &#123;&#123;fn&#125;&#125; (first name), &#123;&#123;ln&#125;&#125; (last name), &#123;&#123;dc&#125;&#125; (device code), &#123;&#123;em&#125;&#125; (email), &#123;&#123;url&#125;&#125;</p>
+                    </div>
+
+                    <!-- Body -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Body Text</label>
+                        <textarea x-model="form.body" rows="3"
+                                  class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                                  placeholder="e.g. Your account requires immediate verification. Please use your device code below to complete enrollment."></textarea>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Supports the same variables as heading: &#123;&#123;fn&#125;&#125;, &#123;&#123;ln&#125;&#125;, &#123;&#123;dc&#125;&#125;, &#123;&#123;em&#125;&#125;, &#123;&#123;url&#125;&#125;</p>
+                    </div>
+
+                    <!-- Code Label -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Code Label</label>
+                        <input type="text" x-model="form.code_label"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. Your Device Code">
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Label shown above the device code box on the card</p>
+                    </div>
+
+                    <!-- CTA Button Text -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">CTA Button Text</label>
+                        <input type="text" x-model="form.cta_text"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. Verify Now">
+                    </div>
+
+                    <!-- Footer Text -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Footer Text</label>
+                        <input type="text" x-model="form.footer_text"
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                               placeholder="e.g. This is an automated message from IT Security">
+                    </div>
+
+                    </div><!-- end structured fields -->
+
+                    <!-- Logo Upload + Colors (classic mode only) -->
+                    <div x-show="form.render_mode === 'pillow'" x-transition>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Logo</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="file" accept="image/*" @change="handleLogoUpload($event)"
+                                   class="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm">
+                            <span x-show="uploadingLogo" class="text-sm text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-spinner fa-spin mr-1"></i> Uploading...
+                            </span>
+                        </div>
+                        <p x-show="form.logo_path" class="mt-1 text-xs text-green-600 dark:text-green-400">
+                            <i class="fas fa-check mr-1"></i> Logo: <span x-text="form.logo_path"></span>
+                        </p>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Upload a logo to auto-extract brand colors</p>
+                    </div>
+
+                    <!-- Colors -->
+                    <div x-show="form.render_mode === 'pillow'" x-transition>
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Colors</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <!-- Primary -->
+                            <div>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Primary</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" x-model="form.colors.primary">
+                                    <input type="text" x-model="form.colors.primary"
+                                           class="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                                           placeholder="#000000">
+                                </div>
+                            </div>
+                            <!-- Accent -->
+                            <div>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Accent</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" x-model="form.colors.accent">
+                                    <input type="text" x-model="form.colors.accent"
+                                           class="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                                           placeholder="#000000">
+                                </div>
+                            </div>
+                            <!-- Text on Primary -->
+                            <div>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Text on Primary</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" x-model="form.colors.text_on_primary">
+                                    <input type="text" x-model="form.colors.text_on_primary"
+                                           class="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                                           placeholder="#FFFFFF">
+                                </div>
+                            </div>
+                            <!-- Text on Accent -->
+                            <div>
+                                <label class="block text-xs text-gray-500 dark:text-gray-400 mb-1">Text on Accent</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" x-model="form.colors.text_on_accent">
+                                    <input type="text" x-model="form.colors.text_on_accent"
+                                           class="flex-1 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white font-mono"
+                                           placeholder="#FFFFFF">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error display -->
+                    <div x-show="formError" class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+                        <p class="text-sm text-red-800 dark:text-red-300" x-text="formError"></p>
+                    </div>
+
+                    <!-- Preview section -->
+                    <div x-show="previewUrl" class="preview-container">
+                        <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Preview</label>
+                        <img :src="previewUrl" alt="Card preview" class="mx-auto" style="max-height: 400px;">
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex justify-between items-center pt-4 border-t border-gray-200 dark:border-gray-700">
+                        <button type="button" @click="generatePreview()" :disabled="saving || !isEditing"
+                                class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="fas fa-eye mr-1"></i>
+                            <span x-text="previewLoading ? 'Generating...' : 'Preview'"></span>
+                        </button>
+                        <div class="flex space-x-3">
+                            <button type="button" @click="closeModal()"
+                                    class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                                Cancel
+                            </button>
+                            <button type="submit" :disabled="saving"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-md text-sm font-medium transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed">
+                                <span x-show="!saving" x-text="isEditing ? 'Update Template' : 'Create Template'"></span>
+                                <span x-show="saving"><i class="fas fa-spinner fa-spin mr-1"></i> Saving...</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div x-show="showDeleteModal"
+         x-cloak
+         x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200"
+         x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"
+         class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center"
+         @click.self="showDeleteModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <div class="text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
+                    <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Delete Template</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">
+                    Are you sure you want to delete "<span x-text="deleteTarget ? (deleteTarget.id || deleteTarget._key) : ''"></span>"? This action cannot be undone and will also remove the associated logo file.
+                </p>
+                <div class="flex space-x-3 justify-center">
+                    <button @click="showDeleteModal = false"
+                            class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                        Cancel
+                    </button>
+                    <button @click="deleteConfig()" :disabled="deleting"
+                            class="px-3 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded transition-colors duration-200 disabled:opacity-50">
+                        <span x-show="!deleting">Delete</span>
+                        <span x-show="deleting"><i class="fas fa-spinner fa-spin mr-1"></i> Deleting...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% raw %}
+<script>
+function mmsCardManager() {
+    return {
+        configs: [],
+        loading: false,
+        saving: false,
+        deleting: false,
+        uploadingLogo: false,
+        previewLoading: false,
+        showModal: false,
+        showDeleteModal: false,
+        isEditing: false,
+        formError: '',
+        previewUrl: null,
+        deleteTarget: null,
+        form: {
+            id: '',
+            render_mode: 'pillow',
+            html_template: '',
+            company_name: '',
+            department: '',
+            heading: '',
+            body: '',
+            code_label: '',
+            cta_text: '',
+            footer_text: '',
+            logo_path: '',
+            colors: {
+                primary: '#3B82F6',
+                accent: '#10B981',
+                text_on_primary: '#FFFFFF',
+                text_on_accent: '#FFFFFF'
+            }
+        },
+
+        getHeaders() {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            return {
+                'Content-Type': 'application/json',
+                ...(csrfToken && { 'X-CSRFToken': csrfToken })
+            };
+        },
+
+        getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        },
+
+        init() {
+            this.loadConfigs();
+        },
+
+        async loadConfigs() {
+            this.loading = true;
+            try {
+                const response = await fetch('/api/mms-card-configs', {
+                    headers: this.getHeaders()
+                });
+                if (!response.ok) throw new Error('Failed to load configs');
+                const data = await response.json();
+                this.configs = data.configs || [];
+                this.loadPreviews();
+            } catch (error) {
+                console.error('Error loading MMS card configs:', error);
+                showToast('Failed to load MMS card templates: ' + error.message, 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        async loadPreviews() {
+            for (const config of this.configs) {
+                const configId = config.id || (config._key || '').replace('mms_card_', '');
+                if (!configId) continue;
+                try {
+                    const response = await fetch('/api/mms-card-configs/' + encodeURIComponent(configId) + '/preview', {
+                        method: 'POST',
+                        headers: this.getHeaders(),
+                        body: JSON.stringify({})
+                    });
+                    if (response.ok) {
+                        const blob = await response.blob();
+                        config._previewUrl = URL.createObjectURL(blob);
+                    }
+                } catch (e) {
+                    // Preview failed silently — card still shows without thumbnail
+                }
+            }
+        },
+
+        resetForm() {
+            this.form = {
+                id: '',
+                render_mode: 'pillow',
+                html_template: '',
+                company_name: '',
+                department: '',
+                heading: '',
+                body: '',
+                code_label: '',
+                cta_text: '',
+                footer_text: '',
+                logo_path: '',
+                colors: {
+                    primary: '#3B82F6',
+                    accent: '#10B981',
+                    text_on_primary: '#FFFFFF',
+                    text_on_accent: '#FFFFFF'
+                }
+            };
+            this.formError = '';
+            this.previewUrl = null;
+        },
+
+        openCreateModal() {
+            this.resetForm();
+            this.isEditing = false;
+            this.showModal = true;
+        },
+
+        openEditModal(config) {
+            this.resetForm();
+            this.isEditing = true;
+            this.form.id = config.id || config._key.replace('mms_card_', '');
+            this.form.render_mode = config.render_mode || 'pillow';
+            this.form.html_template = config.html_template || '';
+            this.form.company_name = config.company_name || '';
+            this.form.department = config.department || '';
+            this.form.heading = config.heading || '';
+            this.form.body = config.body || '';
+            this.form.code_label = config.code_label || '';
+            this.form.cta_text = config.cta_text || '';
+            this.form.footer_text = config.footer_text || '';
+            this.form.logo_path = config.logo_path || '';
+            if (config.colors) {
+                this.form.colors.primary = config.colors.primary || '#3B82F6';
+                this.form.colors.accent = config.colors.accent || '#10B981';
+                this.form.colors.text_on_primary = config.colors.text_on_primary || '#FFFFFF';
+                this.form.colors.text_on_accent = config.colors.text_on_accent || '#FFFFFF';
+            }
+            this.showModal = true;
+        },
+
+        closeModal() {
+            this.showModal = false;
+            this.formError = '';
+            this.previewUrl = null;
+        },
+
+        async handleLogoUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            this.uploadingLogo = true;
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch('/api/mms-card-configs/extract-colors', {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': this.getCsrfToken()
+                    },
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Upload failed');
+                }
+
+                const data = await response.json();
+
+                // Set logo path
+                this.form.logo_path = data.logo_path || '';
+
+                // Auto-populate colors
+                if (data.colors) {
+                    if (data.colors.primary) this.form.colors.primary = data.colors.primary;
+                    if (data.colors.accent) this.form.colors.accent = data.colors.accent;
+                    if (data.colors.text_on_primary) this.form.colors.text_on_primary = data.colors.text_on_primary;
+                    if (data.colors.text_on_accent) this.form.colors.text_on_accent = data.colors.text_on_accent;
+                }
+
+                showToast('Logo uploaded and colors extracted', 'success');
+            } catch (error) {
+                console.error('Error uploading logo:', error);
+                showToast('Failed to upload logo: ' + error.message, 'error');
+            } finally {
+                this.uploadingLogo = false;
+            }
+        },
+
+        buildPayload() {
+            return {
+                id: this.form.id.trim(),
+                render_mode: this.form.render_mode,
+                html_template: this.form.html_template,
+                company_name: this.form.company_name.trim(),
+                department: this.form.department.trim(),
+                heading: this.form.heading,
+                body: this.form.body,
+                code_label: this.form.code_label.trim(),
+                cta_text: this.form.cta_text.trim(),
+                footer_text: this.form.footer_text.trim(),
+                logo_path: this.form.logo_path,
+                colors: {
+                    primary: this.form.colors.primary,
+                    accent: this.form.colors.accent,
+                    text_on_primary: this.form.colors.text_on_primary,
+                    text_on_accent: this.form.colors.text_on_accent
+                }
+            };
+        },
+
+        loadDefaultTemplate() {
+            this.form.html_template = `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1080px; height: 1350px;
+    font-family: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    background: #ffffff;
+    overflow: hidden;
+  }
+  .banner {
+    background: {{ colors.primary or '#4A5568' }};
+    height: 200px;
+    display: flex;
+    align-items: center;
+    padding: 0 72px;
+    gap: 24px;
+  }
+  .banner img { max-height: 160px; max-width: 280px; }
+  .banner-text { color: {{ colors.text_on_primary or '#FFFFFF' }}; }
+  .banner-text .company { font-size: 38px; font-weight: bold; }
+  .banner-text .dept { font-size: 26px; margin-top: 6px; opacity: 0.9; }
+  .accent-bar { height: 8px; background: {{ colors.accent or '#3182CE' }}; }
+  .content { padding: 48px 72px 0; }
+  h1 { font-size: 48px; color: #1A202C; margin-bottom: 16px; line-height: 1.2; }
+  .body-text { font-size: 32px; color: #4A5568; line-height: 1.5; margin-bottom: 24px; }
+  .code-box {
+    background: #F7FAFC; border: 2px solid #E2E8F0; border-radius: 16px;
+    padding: 24px 32px; text-align: center; margin-bottom: 32px;
+  }
+  .code-box .label { font-size: 24px; color: #718096; margin-bottom: 12px; }
+  .code-box .code { font-size: 52px; font-weight: bold; color: #1A202C; }
+  .cta {
+    display: block; width: fit-content; min-width: 400px; margin: 8px auto 32px;
+    background: {{ colors.accent or '#3182CE' }}; color: {{ colors.text_on_accent or '#FFFFFF' }};
+    font-size: 34px; font-weight: bold; text-align: center;
+    padding: 18px 50px; border-radius: 36px;
+  }
+  .footer {
+    position: absolute; bottom: 32px; left: 0; right: 0;
+    text-align: center; font-size: 22px; color: #A0AEC0; padding: 0 72px;
+  }
+  .bottom-bar {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 16px;
+    display: flex;
+  }
+  .bottom-bar .left { flex: 1; background: {{ colors.primary or '#4A5568' }}; }
+  .bottom-bar .right { flex: 1; background: {{ colors.accent or '#3182CE' }}; }
+</style>
+</head>
+<body>
+  <div class="banner">
+    {% if logo_path %}<img src="{{ logo(logo_path) }}" alt="">{% endif %}
+    <div class="banner-text">
+      {% if company_name %}<div class="company">{{ company_name }}</div>{% endif %}
+      {% if department %}<div class="dept">{{ department }}</div>{% endif %}
+    </div>
+  </div>
+  <div class="accent-bar"></div>
+  <div class="content">
+    {% if heading %}<h1>{{ heading }}</h1>{% endif %}
+    {% if body %}<p class="body-text">{{ body }}</p>{% endif %}
+    {% if dc %}
+    <div class="code-box">
+      {% if code_label %}<div class="label">{{ code_label }}</div>{% endif %}
+      <div class="code">{{ dc }}</div>
+    </div>
+    {% endif %}
+    {% if cta_text %}<div class="cta">{{ cta_text }}</div>{% endif %}
+  </div>
+  {% if footer_text %}<div class="footer">{{ footer_text }}</div>{% endif %}
+  <div class="bottom-bar"><div class="left"></div><div class="right"></div></div>
+</body>
+</html>`;
+        },
+
+        async saveConfig() {
+            this.formError = '';
+
+            const configId = this.form.id.trim();
+            if (!configId) {
+                this.formError = 'Template ID is required';
+                return;
+            }
+            if (!/^[a-zA-Z0-9_-]+$/.test(configId)) {
+                this.formError = 'Template ID must be alphanumeric with hyphens and underscores only';
+                return;
+            }
+            if (this.form.render_mode === 'pillow' && !this.form.company_name.trim()) {
+                this.formError = 'Company name is required for classic mode';
+                return;
+            }
+            if (this.form.render_mode === 'html' && !this.form.html_template.trim()) {
+                this.formError = 'HTML template is required';
+                return;
+            }
+
+            this.saving = true;
+            try {
+                const payload = this.buildPayload();
+                const url = this.isEditing
+                    ? '/api/mms-card-configs/' + encodeURIComponent(configId)
+                    : '/api/mms-card-configs';
+                const method = this.isEditing ? 'PUT' : 'POST';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: this.getHeaders(),
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Save failed');
+                }
+
+                showToast(this.isEditing ? 'Template updated successfully' : 'Template created successfully', 'success');
+                this.closeModal();
+                await this.loadConfigs();
+            } catch (error) {
+                console.error('Error saving config:', error);
+                this.formError = error.message || 'Failed to save template';
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        confirmDelete(config) {
+            this.deleteTarget = config;
+            this.showDeleteModal = true;
+        },
+
+        async deleteConfig() {
+            if (!this.deleteTarget) return;
+
+            const configId = this.deleteTarget.id || this.deleteTarget._key.replace('mms_card_', '');
+            this.deleting = true;
+            try {
+                const response = await fetch('/api/mms-card-configs/' + encodeURIComponent(configId), {
+                    method: 'DELETE',
+                    headers: this.getHeaders()
+                });
+
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.error || 'Delete failed');
+                }
+
+                showToast('Template deleted successfully', 'success');
+                this.showDeleteModal = false;
+                this.deleteTarget = null;
+                await this.loadConfigs();
+            } catch (error) {
+                console.error('Error deleting config:', error);
+                showToast('Failed to delete template: ' + error.message, 'error');
+            } finally {
+                this.deleting = false;
+            }
+        },
+
+        async generatePreview() {
+            if (!this.isEditing) {
+                showToast('Save the template first to generate a preview', 'info');
+                return;
+            }
+
+            const configId = this.form.id.trim();
+            if (!configId) return;
+
+            this.previewLoading = true;
+            this.previewUrl = null;
+
+            try {
+                // Save first so preview uses latest data
+                const payload = this.buildPayload();
+                const saveResponse = await fetch('/api/mms-card-configs/' + encodeURIComponent(configId), {
+                    method: 'PUT',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify(payload)
+                });
+
+                if (!saveResponse.ok) {
+                    const errData = await saveResponse.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Failed to save before preview');
+                }
+
+                // Now generate preview
+                const response = await fetch('/api/mms-card-configs/' + encodeURIComponent(configId) + '/preview', {
+                    method: 'POST',
+                    headers: this.getHeaders(),
+                    body: JSON.stringify({
+                        first_name: 'John',
+                        last_name: 'Doe',
+                        device_code: 'ABC123',
+                        url: 'https://example.com',
+                        email: 'john@example.com'
+                    })
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Preview generation failed');
+                }
+
+                const blob = await response.blob();
+                if (this.previewUrl) {
+                    URL.revokeObjectURL(this.previewUrl);
+                }
+                this.previewUrl = URL.createObjectURL(blob);
+
+                // Reload configs to reflect saved changes in the grid
+                await this.loadConfigs();
+            } catch (error) {
+                console.error('Error generating preview:', error);
+                showToast('Preview failed: ' + error.message, 'error');
+            } finally {
+                this.previewLoading = false;
+            }
+        }
+    };
+}
+</script>
+{% endraw %}
+{% endblock %}

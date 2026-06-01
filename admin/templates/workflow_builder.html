@@ -1,0 +1,3506 @@
+{% extends "base.html" %}
+
+{% block title %}{% if workflow %}Edit{% else %}New{% endif %} Workflow - Reel v2{% endblock %}
+
+{% block extra_head %}
+<!-- jsPlumb Community Edition -->
+<script src="https://cdn.jsdelivr.net/npm/jsplumb@2.15.6/dist/js/jsplumb.min.js"></script>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .canvas-viewport {
+        position: relative;
+        width: 100%;
+        height: 800px;
+        background: #f9fafb;
+        border: 2px dashed #d1d5db;
+        border-radius: 8px;
+        overflow: auto;
+        cursor: grab;
+        outline: none;
+    }
+    
+    .canvas-viewport.panning {
+        cursor: grabbing;
+    }
+    
+    .canvas-viewport:focus {
+        outline: 2px solid #3b82f6;
+        outline-offset: -2px;
+    }
+    
+    .canvas-container {
+        position: relative;
+        width: 4000px;
+        height: 4000px;
+        min-width: 4000px;
+        min-height: 4000px;
+        will-change: transform;
+    }
+    
+    #workflow-canvas {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        background: #f9fafb;
+    }
+    
+    .workflow-node {
+        position: absolute;
+        min-width: 150px;
+        padding: 12px;
+        background: white;
+        border: 2px solid #3b82f6;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        cursor: move;
+        user-select: none;
+        z-index: 10;
+    }
+    
+    .workflow-node.start {
+        background: #10b981;
+        border-color: #059669;
+        color: white;
+    }
+    
+    .workflow-node.end {
+        background: #ef4444;
+        border-color: #dc2626;
+        color: white;
+    }
+    
+    .workflow-node.loop {
+        background: linear-gradient(135deg, #9333ea 0%, #7c3aed 100%);
+        border-color: #6d28d9;
+        color: white;
+    }
+    
+    .workflow-node.plugin {
+        background: #3b82f6;
+        border-color: #2563eb;
+        color: white;
+    }
+    
+    .workflow-node.condition {
+        background: #f59e0b;
+        border-color: #d97706;
+        color: white;
+    }
+    
+    .workflow-node.selected {
+        border-width: 3px;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    .plugin-palette {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    
+    .plugin-item {
+        cursor: grab;
+        transition: all 0.2s;
+    }
+    
+    .plugin-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .plugin-item:active {
+        cursor: grabbing;
+    }
+    
+    .dark .canvas-viewport {
+        background: #111827;
+        border-color: #374151;
+    }
+    
+    .dark #workflow-canvas {
+        background: #111827;
+    }
+    
+    .dark .workflow-node {
+        background: #1f2937;
+        border-color: #3b82f6;
+        color: white;
+    }
+    
+    .jtk-connector {
+        z-index: 1;
+    }
+    
+    .jtk-endpoint {
+        z-index: 2;
+        cursor: pointer;
+    }
+    
+    .jtk-endpoint-connected {
+        background: #10b981 !important;
+    }
+    
+    .endpoint-label {
+        font-size: 10px;
+        font-weight: bold;
+        color: #1f2937;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 2px 4px;
+        border-radius: 3px;
+        white-space: nowrap;
+    }
+    
+    .dark .endpoint-label {
+        color: #f9fafb;
+        background: rgba(31, 41, 55, 0.9);
+    }
+    
+    [x-cloak] { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8" x-data="workflowBuilder()" x-init="init()">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold dark:text-white">
+            {% if workflow %}Edit Workflow{% else %}New {{ workflow_type|title }} Workflow{% endif %}
+        </h1>
+        <a href="{{ url_for('admin.workflows') }}" 
+           class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+            Back to Workflows
+        </a>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <!-- Workflow Metadata -->
+        <div class="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-2 dark:text-gray-300">Workflow Name *</label>
+                <input type="text" x-model="workflowName" 
+                       class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                       required>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2 dark:text-gray-300">Description</label>
+                <textarea x-model="workflowDescription" rows="2"
+                          class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"></textarea>
+            </div>
+        </div>
+
+        <!-- Workflow Builder -->
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+            <!-- Plugin Palette -->
+            <div class="lg:col-span-1">
+                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 plugin-palette">
+                    <h3 class="font-semibold mb-4 dark:text-white">Nodes</h3>
+                    
+                    <!-- Special Nodes -->
+                    <div class="mb-4">
+                        <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2">Special</h4>
+                        <button @click="addStartNode()" 
+                                class="w-full plugin-item bg-green-600 text-white rounded p-3 mb-2 hover:bg-green-700 text-left">
+                            <div class="font-medium text-sm">Start</div>
+                            <div class="text-xs opacity-75 mt-1">Workflow entry point</div>
+                        </button>
+                        <button @click="addLoopNode()" 
+                                class="w-full plugin-item bg-purple-600 text-white rounded p-3 mb-2 hover:bg-purple-700 text-left">
+                            <div class="font-medium text-sm">Loop</div>
+                            <div class="text-xs opacity-75 mt-1">Iterate over array (e.g., targets)</div>
+                        </button>
+                        <button @click="addEndNode()" 
+                                class="w-full plugin-item bg-red-600 text-white rounded p-3 mb-2 hover:bg-red-700 text-left">
+                            <div class="font-medium text-sm">End</div>
+                            <div class="text-xs opacity-75 mt-1">Workflow exit point (accepts multiple connections)</div>
+                        </button>
+                    </div>
+                    
+                    <!-- Plugins by Category -->
+                    <div class="space-y-2">
+                        <template x-for="category in pluginCategories" :key="category">
+                            <div class="mb-4">
+                                <h4 class="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase mb-2" x-text="category"></h4>
+                                <template x-for="plugin in getPluginsByCategory(category)" :key="plugin.plugin_type">
+                                    <div class="plugin-item bg-white dark:bg-gray-800 rounded p-3 mb-2 border border-gray-200 dark:border-gray-700 cursor-move hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                         draggable="true"
+                                         @dragstart="handleDragStart($event, plugin)"
+                                         :title="plugin.description || plugin.display_name">
+                                        <div class="font-medium text-sm dark:text-white" x-text="plugin.display_name || plugin.name || plugin.plugin_type"></div>
+                                        <div class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="plugin.description || 'No description'"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </template>
+                        <!-- Show message if no plugins -->
+                        <div x-show="plugins.length === 0" class="text-center py-4 text-gray-500 dark:text-gray-400 text-sm">
+                            No plugins available
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Canvas -->
+            <div class="lg:col-span-3">
+                <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 relative">
+                    <!-- Canvas Controls -->
+                    <div class="absolute top-2 right-2 z-20 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 flex items-center gap-2 border border-gray-200 dark:border-gray-700">
+                        <button @click="zoomOut()" 
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300 text-sm font-bold"
+                                title="Zoom Out">
+                            −
+                        </button>
+                        <span class="px-2 py-1 text-sm font-medium text-gray-700 dark:text-gray-300 min-w-[50px] text-center" 
+                              x-text="Math.round(canvasZoom * 100) + '%'"></span>
+                        <button @click="zoomIn()" 
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300 text-sm font-bold"
+                                title="Zoom In">
+                            +
+                        </button>
+                        <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <button @click="resetZoom()" 
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300 text-xs"
+                                title="Reset Zoom to 100%">
+                            100%
+                        </button>
+                        <button @click="zoomToFit()" 
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300 text-xs"
+                                title="Zoom to Fit All Nodes">
+                            Fit
+                        </button>
+                        <div class="w-px h-6 bg-gray-300 dark:bg-gray-600 mx-1"></div>
+                        <button @click="resetPan()" 
+                                class="px-2 py-1 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded text-gray-700 dark:text-gray-300 text-xs"
+                                title="Center View">
+                            Center
+                        </button>
+                    </div>
+                    
+                    <!-- Canvas Viewport -->
+                    <div class="canvas-viewport" 
+                         id="canvas-viewport"
+                         @mousedown="startPan($event)"
+                         @mousemove="doPan($event)"
+                         @mouseup="endPan()"
+                         @mouseleave="endPan()"
+                         @wheel.prevent="handleWheelZoom($event)"
+                         tabindex="0"
+                         @keydown="handleKeyPan($event)">
+                        <div class="canvas-container" 
+                             id="workflow-canvas-wrapper"
+                             :style="`transform: translate(${canvasPanX}px, ${canvasPanY}px) scale(${canvasZoom}); transform-origin: 0 0;`">
+                            <div id="workflow-canvas"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions -->
+        <div class="mt-6 flex gap-2">
+            <button @click="saveWorkflow()" 
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                {% if workflow %}Update{% else %}Create{% endif %} Workflow
+            </button>
+            <button @click="testWorkflow()" 
+                    x-show="workflowId"
+                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                Test Workflow
+            </button>
+            <button @click="validateWorkflow()" 
+                    class="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700">
+                Validate
+            </button>
+            <button @click="deleteSelectedNode()" 
+                    x-show="selectedNode"
+                    class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700">
+                Delete Node
+            </button>
+        </div>
+    </div>
+
+    <!-- Node Configuration Modal -->
+    <div x-show="showConfigModal" 
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+         @click.self="showConfigModal = false">
+        <div class="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 class="text-xl font-bold mb-2 dark:text-white">Configure Node</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4 font-mono" x-show="selectedNode">Node ID: <span x-text="selectedNode?.id"></span></p>
+            <div id="node-config-form"></div>
+            <div class="mt-4 flex gap-2">
+                <button @click="saveNodeConfig()" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    Save
+                </button>
+                <button @click="showConfigModal = false" 
+                        class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<script>
+let workflowBuilderInstance = null;
+
+function workflowBuilder() {
+    const instance = {
+        workflowId: {% if workflow %}{{ workflow.id }}{% else %}null{% endif %},
+        workflowType: '{{ workflow_type }}',
+        workflowName: {% if workflow %}{{ workflow.name|tojson }}{% else %}''{% endif %},
+        workflowDescription: {% if workflow %}{{ workflow.description|tojson }}{% else %}''{% endif %},
+        plugins: [],
+        pluginCategories: [],
+        nodes: [],
+        edges: [],
+        reactFlowInstance: null,
+        showConfigModal: false,
+        selectedNode: null,
+        nodeConfig: {},
+        
+        jsPlumbInstance: null,
+        connectionListenersBound: false,
+        isUpdatingNodes: false,
+        isDragging: false,
+        nodesSetupForDragging: new Set(),
+        updateNodesTimeout: null,
+        lastDragEndTime: null,
+        lastLoopAddTime: null, // Debounce double-click on Loop button
+        // Canvas zoom and pan state
+        canvasZoom: 1.0,
+        canvasPanX: 0,
+        canvasPanY: 0,
+        isPanning: false,
+        panStartX: 0,
+        panStartY: 0,
+        panStartOffsetX: 0,
+        panStartOffsetY: 0,
+        
+        async init() {
+            await this.loadPlugins();
+            await this.loadWorkflow();
+            // Wait for DOM to be ready
+            setTimeout(() => {
+                this.initJsPlumb();
+            }, 100);
+            
+            // Track spacebar for panning
+            window.spaceKeyPressed = false;
+            document.addEventListener('keydown', (e) => {
+                if (e.key === ' ' || e.code === 'Space') {
+                    window.spaceKeyPressed = true;
+                }
+            });
+            document.addEventListener('keyup', (e) => {
+                if (e.key === ' ' || e.code === 'Space') {
+                    window.spaceKeyPressed = false;
+                }
+            });
+            
+            // Make spacebar not scroll page when canvas is focused
+            setTimeout(() => {
+                const viewport = document.getElementById('canvas-viewport');
+                if (viewport) {
+                    viewport.addEventListener('keydown', (e) => {
+                        if (e.key === ' ' || e.code === 'Space') {
+                            e.preventDefault();
+                        }
+                    });
+                }
+            }, 200);
+        },
+        
+        async loadPlugins() {
+            try {
+                const response = await fetch('/api/plugins?active_only=true');
+                
+                if (!response.ok) {
+                    console.error('Failed to load plugins:', response.status, response.statusText);
+                    const errorText = await response.text();
+                    console.error('Error response:', errorText);
+                    return;
+                }
+                
+                const data = await response.json();
+                this.plugins = data.plugins || [];
+                
+                if (this.plugins.length === 0) {
+                    console.warn('No plugins found');
+                }
+                
+                // Group plugins by category
+                const categories = new Set();
+                this.plugins.forEach(p => {
+                    if (p.plugin_category) {
+                        categories.add(p.plugin_category);
+                    } else {
+                        // Add to 'uncategorized' if no category
+                        categories.add('uncategorized');
+                    }
+                });
+                
+                // If no categories, add uncategorized
+                if (categories.size === 0) {
+                    categories.add('uncategorized');
+                }
+                
+                this.pluginCategories = Array.from(categories).sort();
+            } catch (error) {
+                console.error('Error loading plugins:', error);
+                // Show user-friendly error
+                showToast('Failed to load plugins. Please check the console for details.', 'error');
+            }
+        },
+        
+        async loadWorkflow() {
+            if (!this.workflowId) {
+                // Create default start node
+                this.nodes = [{
+                    id: 'start',
+                    position: { x: 100, y: 100 },
+                    data: { 
+                        label: 'Start',
+                        nodeType: 'start'
+                    }
+                }];
+                this.edges = [];
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/workflows/${this.workflowId}`);
+                const data = await response.json();
+                
+                if (data.workflow_data && data.workflow_data.nodes) {
+                    this.nodes = data.workflow_data.nodes.map(node => {
+                        // Get plugin display name if available
+                        let label = node.plugin_type || node.node_type;
+                        if (node.plugin_type) {
+                            const plugin = this.plugins.find(p => p.plugin_type === node.plugin_type);
+                            if (plugin) {
+                                label = plugin.display_name;
+                            }
+                        } else if (node.node_type === 'start') {
+                            label = 'Start';
+                        } else if (node.node_type === 'end') {
+                            label = 'End';
+                        } else if (node.node_type === 'loop') {
+                            label = 'Loop';
+                        }
+                        
+                        return {
+                            id: node.node_id || node.id,
+                            position: { x: node.position_x || 0, y: node.position_y || 0 },
+                            data: { 
+                                label: label,
+                                nodeType: node.node_type,
+                                pluginType: node.plugin_type,
+                                config: node.config || (node.node_type === 'loop' ? {
+                                    array_source: 'targets',
+                                    item_key: 'target',
+                                    index_key: '_loop_index',
+                                    delay: 0
+                                } : {})
+                            }
+                        };
+                    });
+                    
+                    // Build edges from connections
+                    // Support both formats: connections in nodes array or separate connections array
+                    // Build in a regular array first, then assign to break Alpine.js Proxy issues
+                    const edgesArray = [];
+                    
+                    // First, try connections stored in each node (preferred format)
+                    data.workflow_data.nodes.forEach(node => {
+                        const nodeId = node.node_id || node.id;
+                        if (node.connections && Array.isArray(node.connections) && node.connections.length > 0) {
+                            // For path-based format: each target can only appear once (first wins)
+                            const seenTargets = new Set();
+                            node.connections.forEach(conn => {
+                                // Handle both formats: simple string array or boolean path format
+                                if (typeof conn === 'string') {
+                                    // Simple format: just target ID
+                                    const exists = edgesArray.some(e => e.source === nodeId && e.target === conn && !e.path);
+                                    if (!exists) {
+                                        edgesArray.push({
+                                            source: nodeId,
+                                            target: conn
+                                        });
+                                    }
+                                } else if (conn && typeof conn === 'object' && conn.target) {
+                                    // Boolean path format: {path: "true"/"false", target: "node-id"}
+                                    // Each target can only appear once - skip duplicates (e.g. target on both paths)
+                                    if (seenTargets.has(conn.target)) {
+                                        return;
+                                    }
+                                    seenTargets.add(conn.target);
+                                    let normalizedPath = conn.path;
+                                    if (conn.path === 'success') {
+                                        normalizedPath = 'true';
+                                    } else if (conn.path === 'fail') {
+                                        normalizedPath = 'false';
+                                    }
+                                    edgesArray.push({
+                                        source: nodeId,
+                                        target: conn.target,
+                                        path: normalizedPath
+                                    });
+                                } else {
+                                    console.warn(`  Unexpected connection format for node ${nodeId}:`, conn);
+                                }
+                            });
+                        }
+                    });
+                    
+                    
+                    // Also support separate connections array if present (legacy format)
+                    if (data.workflow_data.connections && Array.isArray(data.workflow_data.connections)) {
+                        data.workflow_data.connections.forEach(conn => {
+                            const sourceId = conn.source || conn.from;
+                            const targetId = conn.target || conn.to;
+                            if (sourceId && targetId) {
+                                const exists = edgesArray.some(e => e.source === sourceId && e.target === targetId);
+                                if (!exists) {
+                                    edgesArray.push({
+                                        source: sourceId,
+                                        target: targetId
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Assign the built array to this.edges (this will create a new reactive array)
+                    this.edges = edgesArray;
+                    
+                } else {
+                    this.nodes = [{
+                        id: 'start',
+                        position: { x: 100, y: 100 },
+                        data: { 
+                            label: 'Start',
+                            nodeType: 'start'
+                        }
+                    }];
+                    this.edges = [];
+                }
+            } catch (error) {
+                console.error('Error loading workflow:', error);
+                // Default to start node on error
+                this.nodes = [{
+                    id: 'start',
+                    position: { x: 100, y: 100 },
+                    data: { 
+                        label: 'Start',
+                        nodeType: 'start'
+                    }
+                }];
+                this.edges = [];
+            }
+        },
+        
+        initJsPlumb() {
+            if (!window.jsPlumb) {
+                setTimeout(() => this.initJsPlumb(), 100);
+                return;
+            }
+            
+            const container = document.getElementById('workflow-canvas');
+            if (!container) return;
+            
+            // Initialize jsPlumb - jsPlumb Community Edition API
+            // The CDN version exposes jsPlumb as a function that returns an instance
+            try {
+                if (typeof window.jsPlumb === 'function') {
+                    // jsPlumb 2.x API - function that returns instance
+                    this.jsPlumbInstance = window.jsPlumb.jsPlumb.newInstance({
+                        container: container,
+                        paintStyle: { stroke: '#3b82f6', strokeWidth: 2 },
+                        connector: ['Flowchart', { stub: 10, gap: 5, cornerRadius: 5 }],
+                        endpoint: ['Dot', { radius: 5 }],
+                        anchors: ['Right', 'Left']
+                    });
+                } else if (window.jsPlumb.jsPlumb && window.jsPlumb.jsPlumb.newInstance) {
+                    // Alternative API structure
+                    this.jsPlumbInstance = window.jsPlumb.jsPlumb.newInstance({
+                        container: container,
+                        paintStyle: { stroke: '#3b82f6', strokeWidth: 2 },
+                        connector: ['Flowchart', { stub: 10, gap: 5, cornerRadius: 5 }],
+                        endpoint: ['Dot', { radius: 5 }],
+                        anchors: ['Right', 'Left']
+                    });
+                } else if (window.jsPlumb.newInstance) {
+                    // Direct newInstance method
+                    this.jsPlumbInstance = window.jsPlumb.newInstance({
+                        container: container,
+                        paintStyle: { stroke: '#3b82f6', strokeWidth: 2 },
+                        connector: ['Flowchart', { stub: 10, gap: 5, cornerRadius: 5 }],
+                        endpoint: ['Dot', { radius: 5 }],
+                        anchors: ['Right', 'Left']
+                    });
+                } else {
+                    // Fallback to default instance with legacy API
+                    this.jsPlumbInstance = window.jsPlumb.getInstance({
+                        PaintStyle: { stroke: '#3b82f6', strokeWidth: 2 },
+                        Connector: ['Flowchart', { stub: 10, gap: 5, cornerRadius: 5 }],
+                        Endpoint: ['Dot', { radius: 5 }],
+                        Anchor: ['Right', 'Left']
+                    });
+                }
+            } catch (e) {
+                console.error('Error initializing jsPlumb:', e);
+                // Try one more time with the most common API
+                try {
+                    this.jsPlumbInstance = window.jsPlumb.jsPlumb.newInstance({
+                        container: container
+                    });
+                } catch (e2) {
+                    console.error('Failed to initialize jsPlumb:', e2);
+                    return;
+                }
+            }
+            
+            // Make canvas droppable
+            container.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+            });
+            
+            // Track last drop event to prevent duplicate processing
+            let lastDropTime = 0;
+            let lastDropPosition = null;
+            
+            const canvasWrapper = document.getElementById('workflow-canvas-wrapper');
+            const dropTarget = canvasWrapper || container;
+            
+            dropTarget.addEventListener('drop', (e) => {
+                e.preventDefault();
+                e.stopPropagation(); // Prevent event bubbling
+                // Check if we're dropping on an existing node (should not create new node)
+                const targetElement = e.target;
+                if (targetElement && (targetElement.classList.contains('workflow-node') || targetElement.closest('.workflow-node'))) {
+                    // This is a node drag, not a new node drop - ignore
+                    e.dataTransfer.clearData(); // Clear to prevent future duplicates
+                    return;
+                }
+                
+                // Check if we're currently dragging a node (jsPlumb drag)
+                // Also check if any node has the data-dragging attribute (more reliable)
+                const draggedNode = document.querySelector('.workflow-node[data-dragging="true"]');
+                // Ignore drops for a period after any canvas node drag (Loop, Start, End, plugins) to prevent duplicates
+                const recentDragEnd = this.lastDragEndTime && (Date.now() - this.lastDragEndTime < 800);
+                if (this.isDragging || draggedNode || recentDragEnd) {
+                    // This is a node position update, not a new node - ignore
+                    e.dataTransfer.clearData(); // Clear to prevent future duplicates
+                    return;
+                }
+                
+                const pluginData = e.dataTransfer.getData('application/reactflow');
+                if (!pluginData) return;
+                
+                try {
+                    const plugin = JSON.parse(pluginData);
+                    // Calculate position relative to canvas wrapper, accounting for zoom and pan
+                    const wrapperRect = canvasWrapper ? canvasWrapper.getBoundingClientRect() : container.getBoundingClientRect();
+                    // Convert screen coordinates to canvas coordinates
+                    const position = {
+                        x: (e.clientX - wrapperRect.left) / this.canvasZoom - this.canvasPanX / this.canvasZoom,
+                        y: (e.clientY - wrapperRect.top) / this.canvasZoom - this.canvasPanY / this.canvasZoom
+                    };
+                    
+                    // Prevent duplicate drops within 100ms at the same position
+                    const now = Date.now();
+                    const isDuplicate = (now - lastDropTime < 100) && 
+                                       lastDropPosition && 
+                                       Math.abs(lastDropPosition.x - position.x) < 5 && 
+                                       Math.abs(lastDropPosition.y - position.y) < 5;
+                    
+                    if (isDuplicate) {
+                        return;
+                    }
+                    
+                    lastDropTime = now;
+                    lastDropPosition = position;
+                    this.addNode(plugin, position);
+                    
+                    // Clear dataTransfer to prevent duplicate events
+                    e.dataTransfer.clearData();
+                } catch (err) {
+                    if (err instanceof DOMException || (err && err.name === 'DOMException')) {
+                        // Document state / modification restriction; avoid noisy stack trace
+                    } else {
+                        console.error('Error parsing plugin data:', err);
+                    }
+                }
+            });
+            
+            // Render existing nodes
+            this.renderNodes();
+        },
+        
+        updateNodes() {
+            // Prevent re-entrancy and updates during drag
+            if (this.isUpdatingNodes || this.isDragging) {
+                return;
+            }
+            this.isUpdatingNodes = true;
+            
+            try {
+                // Incremental update - only add/remove/update what changed
+                const container = document.getElementById('workflow-canvas');
+                if (!container || !this.jsPlumbInstance) {
+                    return;
+                }
+            
+                // Preserve connections before any DOM changes
+                this.preserveConnections();
+            
+            // Get existing DOM nodes
+            const existingNodes = this.getExistingNodeElements();
+            const nodeIds = new Set(this.nodes.map(n => n.id));
+            
+            // Check for duplicate node IDs in the data model
+            const nodeIdCounts = {};
+            this.nodes.forEach(n => {
+                nodeIdCounts[n.id] = (nodeIdCounts[n.id] || 0) + 1;
+            });
+            const duplicates = Object.entries(nodeIdCounts).filter(([id, count]) => count > 1);
+            if (duplicates.length > 0) {
+                console.warn('[DEBUG] Duplicate node IDs found in data model:', duplicates);
+                // Remove duplicates, keeping only the first occurrence
+                const seen = new Set();
+                this.nodes = this.nodes.filter(n => {
+                    if (seen.has(n.id)) {
+                        return false;
+                    }
+                    seen.add(n.id);
+                    return true;
+                });
+            }
+            
+            // Remove nodes that no longer exist in data
+            existingNodes.forEach((el, nodeId) => {
+                if (!nodeIds.has(nodeId)) {
+                    // Remove connections first
+                    this.edges = this.edges.filter(e => e.source !== nodeId && e.target !== nodeId);
+                    // Remove endpoints
+                    try {
+                        this.jsPlumbInstance.deleteEndpoint(`${nodeId}-source`);
+                        this.jsPlumbInstance.deleteEndpoint(`${nodeId}-target`);
+                    } catch (e) {
+                        // Endpoint might not exist, ignore
+                    }
+                    // Remove from dragging tracking
+                    this.nodesSetupForDragging.delete(nodeId);
+                    // Remove element
+                    el.remove();
+                }
+            });
+            
+            // Track nodes we've processed in this update cycle to prevent duplicates
+            const processedInThisCycle = new Set();
+            
+            // Add or update nodes
+            this.nodes.forEach((node, index) => {
+                // Skip if we've already processed this node ID in this cycle
+                if (processedInThisCycle.has(node.id)) {
+                    return;
+                }
+                processedInThisCycle.add(node.id);
+                
+                let nodeEl = existingNodes.get(node.id);
+                
+                if (!nodeEl) {
+                    // Double-check: node might have been added by another process
+                    // Check both querySelector and getElementById
+                    nodeEl = container.querySelector(`#${node.id}`);
+                    if (!nodeEl) {
+                        nodeEl = document.getElementById(node.id);
+                    }
+                    if (!nodeEl) {
+                        // Final check: make absolutely sure it doesn't exist
+                        const finalCheck = container.querySelector(`#${node.id}`) || document.getElementById(node.id);
+                        if (finalCheck) {
+                            nodeEl = finalCheck;
+                            existingNodes.set(node.id, nodeEl);
+                        } else {
+                            // Create new node
+                            nodeEl = this.createNodeElement(node);
+                            container.appendChild(nodeEl);
+                            // Immediately update existingNodes map to prevent duplicates
+                            existingNodes.set(node.id, nodeEl);
+                            // Add endpoints first (only if not already added)
+                            if (!this.jsPlumbInstance.getEndpoints(nodeEl).length) {
+                                this.addNodeEndpoints(nodeEl, node.id);
+                            }
+                            
+                            // Add event handlers (only if not already added)
+                            // Note: We can't easily check if handlers are already added, so we'll add them
+                            // but this should be safe as addEventListener doesn't duplicate
+                            this.attachNodeEventHandlers(nodeEl, node);
+                            
+                            // Make draggable last (only if not already set up)
+                            // Use a small delay to ensure DOM is fully ready
+                            if (!this.nodesSetupForDragging.has(node.id)) {
+                                // Use requestAnimationFrame to ensure DOM is ready
+                                requestAnimationFrame(() => {
+                                    if (document.getElementById(node.id) && !this.nodesSetupForDragging.has(node.id)) {
+                                        this.setupNodeDragging(nodeEl, node);
+                                    }
+                                });
+                            }
+                        }
+                    } else {
+                        // Node already exists in DOM - just update position if needed
+                        const currentX = parseInt(nodeEl.style.left) || 0;
+                        const currentY = parseInt(nodeEl.style.top) || 0;
+                        const newX = node.position?.x || 0;
+                        const newY = node.position?.y || 0;
+                        
+                        if (currentX !== newX || currentY !== newY) {
+                            nodeEl.style.left = `${newX}px`;
+                            nodeEl.style.top = `${newY}px`;
+                        }
+                    }
+                } else {
+                    // Update existing node position if changed - but skip if currently dragging
+                    if (!this.isDragging || nodeEl.getAttribute('data-dragging') !== 'true') {
+                        const currentX = parseInt(nodeEl.style.left) || 0;
+                        const currentY = parseInt(nodeEl.style.top) || 0;
+                        const newX = node.position?.x || 0;
+                        const newY = node.position?.y || 0;
+                        
+                        if (currentX !== newX || currentY !== newY) {
+                            nodeEl.style.left = `${newX}px`;
+                            nodeEl.style.top = `${newY}px`;
+                        }
+                    }
+                    
+                    // Update label if changed
+                    const labelEl = nodeEl.querySelector('.font-semibold');
+                    if (labelEl && labelEl.textContent !== (node.data?.label || node.id)) {
+                        labelEl.textContent = node.data?.label || node.id;
+                    }
+                }
+                });
+                
+                // Restore connections
+                this.restoreConnections();
+            } catch (error) {
+                console.error('Error in updateNodes:', error);
+            } finally {
+                // Always reset the flag, even on error
+                this.isUpdatingNodes = false;
+            }
+        },
+        
+        renderNodes() {
+            // Full render - only used for initial load
+            const container = document.getElementById('workflow-canvas');
+            if (!container || !this.jsPlumbInstance) return;
+            // Clear so we always attach dragging to the elements we create (handles double initJsPlumb)
+            this.nodesSetupForDragging.clear();
+            // Convert edges to regular array to avoid Alpine.js reactivity issues
+            const edgesToRestore = Array.isArray(this.edges) ? [...this.edges] : [];
+            
+            // Preserve connections (only if there are existing connections in jsPlumb)
+            // This should only ADD to edges, not clear them
+            this.preserveConnections();
+            
+            // Restore the edges we stored (preserveConnections might have modified them)
+            // Merge with any new connections from preserveConnections
+            const preservedEdges = Array.isArray(this.edges) ? [...this.edges] : [];
+            const allEdges = [...edgesToRestore];
+            preservedEdges.forEach(edge => {
+                const exists = allEdges.some(e => e.source === edge.source && e.target === edge.target);
+                if (!exists) {
+                    allEdges.push(edge);
+                }
+            });
+            this.edges = allEdges;
+            
+            // Clear canvas
+            container.innerHTML = '';
+            this.jsPlumbInstance.deleteEveryConnection();
+            this.jsPlumbInstance.deleteEveryEndpoint();
+            
+            // Render all nodes
+            this.nodes.forEach(node => {
+                const nodeEl = this.createNodeElement(node);
+                container.appendChild(nodeEl);
+                this.setupNodeDragging(nodeEl, node);
+                this.addNodeEndpoints(nodeEl, node.id);
+                this.attachNodeEventHandlers(nodeEl, node);
+            });
+            
+            // Repaint to ensure endpoints are rendered
+            this.jsPlumbInstance.repaintEverything();
+            
+            // Setup connection listeners BEFORE restoring connections
+            // This ensures new connections are tracked
+            this.setupConnectionListeners();
+            
+            // Restore connections after a brief delay to ensure endpoints are ready
+            setTimeout(async () => {
+                await this.restoreConnections();
+                this.jsPlumbInstance.repaintEverything();
+            }, 100);
+        },
+        
+        createNodeElement(node) {
+            const div = document.createElement('div');
+            div.id = node.id;
+            div.className = `workflow-node ${node.data?.nodeType || 'plugin'}`;
+            div.style.left = `${node.position?.x || 0}px`;
+            div.style.top = `${node.position?.y || 0}px`;
+            div.setAttribute('draggable', 'false'); // Prevent native HTML5 drag so canvas drop doesn't create duplicate
+            const isEndNode = node.data?.nodeType === 'end' || node.node_type === 'end';
+            const isLoopNode = node.data?.nodeType === 'loop' || node.node_type === 'loop';
+            const tooltip = isEndNode ? ' title="End node - accepts multiple connections from branching paths"' : 
+                           (isLoopNode ? ' title="Loop node - iterates over array and executes child nodes"' : '');
+            div.innerHTML = `
+                <div class="font-semibold text-sm">${node.data?.label || node.id}</div>
+                ${node.data?.pluginType ? `<div class="text-xs mt-1 opacity-75">${node.data.pluginType}</div>` : ''}
+                ${isEndNode ? `<div class="text-xs mt-1 opacity-75 italic">Accepts multiple connections</div>` : ''}
+                ${isLoopNode ? `<div class="text-xs mt-1 opacity-75 italic">Iterates over array</div>` : ''}
+                <div class="text-xs mt-1 opacity-50 font-mono">ID: ${node.id}</div>
+            `;
+            if (tooltip) {
+                if (isEndNode) {
+                    div.setAttribute('title', 'End node - accepts multiple connections from branching paths');
+                } else if (isLoopNode) {
+                    div.setAttribute('title', 'Loop node - iterates over array and executes child nodes');
+                }
+            }
+            return div;
+        },
+        
+        setupNodeDragging(nodeEl, node) {
+            // Prevent setting up drag handlers multiple times on the same node
+            if (this.nodesSetupForDragging.has(node.id)) {
+                return;
+            }
+            this.jsPlumbInstance.draggable(nodeEl, {
+                containment: 'parent',
+                start: (info) => {
+                    // jsPlumb passes an info object, not the element directly
+                    const el = info.el || info.element || nodeEl;
+                    this.isDragging = true;
+                    if (el && el.setAttribute) {
+                        el.setAttribute('data-dragging', 'true');
+                    }
+                },
+                stop: (info) => {
+                    // jsPlumb passes an info object, not the element directly
+                    const el = info.el || info.element || nodeEl;
+                    if (el) {
+                        // Get the actual CSS left/top values which are in canvas coordinates
+                        const computedStyle = window.getComputedStyle(el);
+                        const newPosition = {
+                            x: parseFloat(computedStyle.left) || 0,
+                            y: parseFloat(computedStyle.top) || 0
+                        };
+                        this.updateNodePosition(node.id, newPosition);
+                        // Remove dragging attribute
+                        if (el.removeAttribute) {
+                            el.removeAttribute('data-dragging');
+                        }
+                        // Record drag end time to prevent duplicate drops
+                        this.lastDragEndTime = Date.now();
+                        // Clear dataTransfer to prevent drop handler from creating duplicates
+                        // Use a longer delay to ensure drop event has been processed
+                        setTimeout(() => {
+                            this.isDragging = false;
+                            // Clear any remaining drag data
+                            if (el.dataTransfer) {
+                                el.dataTransfer.clearData();
+                            }
+                        }, 300);
+                    } else {
+                        if (el && el.removeAttribute) {
+                            el.removeAttribute('data-dragging');
+                        }
+                        this.isDragging = false;
+                    }
+                }
+            });
+            
+            // Mark this node as set up for dragging
+            this.nodesSetupForDragging.add(node.id);
+        },
+        
+        addNodeEndpoints(nodeEl, nodeId) {
+            // Find the node to get its plugin type
+            const node = this.nodes.find(n => n.id === nodeId);
+            if (!node) {
+                // Fallback: create standard endpoints
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source`,
+                    anchor: 'Right',
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1
+                });
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-target`,
+                    anchor: 'Left',
+                    isSource: false,
+                    isTarget: true,
+                    maxConnections: -1
+                });
+                return;
+            }
+            
+            // Handle LOOP nodes - source endpoint for connecting to child nodes
+            if (node.data?.nodeType === 'loop' || node.node_type === 'loop') {
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source`,
+                    anchor: 'Right',
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1,
+                    paintStyle: { fill: '#9333ea', stroke: '#6d28d9', strokeWidth: 2 },
+                    hoverPaintStyle: { fill: '#a855f7', stroke: '#6d28d9', strokeWidth: 3 }
+                });
+                // Loop nodes can also receive connections (from previous nodes)
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-target`,
+                    anchor: 'Left',
+                    isSource: false,
+                    isTarget: true,
+                    maxConnections: -1,
+                    paintStyle: { fill: '#9333ea', stroke: '#6d28d9', strokeWidth: 2 },
+                    hoverPaintStyle: { fill: '#a855f7', stroke: '#6d28d9', strokeWidth: 3 }
+                });
+                return;
+            }
+            
+            // Handle END nodes - only target endpoint, accepts multiple connections
+            if (node.data?.nodeType === 'end' || node.node_type === 'end') {
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-target`,
+                    anchor: 'Left',
+                    isSource: false,
+                    isTarget: true,
+                    maxConnections: -1, // Allow unlimited connections
+                    paintStyle: { fill: '#ef4444', stroke: '#dc2626', strokeWidth: 2 },
+                    hoverPaintStyle: { fill: '#f87171', stroke: '#dc2626', strokeWidth: 3 }
+                });
+                return;
+            }
+            
+            // Handle START nodes - only source endpoint
+            if (node.data?.nodeType === 'start' || node.node_type === 'start') {
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source`,
+                    anchor: 'Right',
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1
+                });
+                return;
+            }
+            
+            // Check if plugin supports branching
+            const pluginType = node.data?.pluginType;
+            let plugin = null;
+            if (pluginType) {
+                plugin = this.plugins.find(p => p.plugin_type === pluginType);
+            }
+            
+            const branchContextKey = plugin?.branch_context_key;
+            const branchLabels = plugin?.branch_labels || {true: "True", false: "False"};
+            
+            // Always add target endpoint (left side) - allow multiple connections
+            this.jsPlumbInstance.addEndpoint(nodeEl, {
+                uuid: `${nodeId}-target`,
+                anchor: 'Left',
+                isSource: false,
+                isTarget: true,
+                maxConnections: -1 // Allow unlimited connections
+            });
+            
+            // Add source endpoint(s) based on branching support
+            if (branchContextKey) {
+                // Color map: plugins declare which path is green/red via branch_colors
+                const branchColors = plugin?.branch_colors || {true: 'green', false: 'red'};
+                const colorStyles = {
+                    green: { paint: { fill: '#10b981', stroke: '#059669', strokeWidth: 2 }, hover: { fill: '#34d399', stroke: '#059669', strokeWidth: 3 } },
+                    red:   { paint: { fill: '#ef4444', stroke: '#dc2626', strokeWidth: 2 }, hover: { fill: '#f87171', stroke: '#dc2626', strokeWidth: 3 } }
+                };
+                const trueStyle = colorStyles[branchColors.true] || colorStyles.green;
+                const falseStyle = colorStyles[branchColors.false] || colorStyles.red;
+
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source-true`,
+                    anchor: [1, 0.3, 0, -1], // Right side, 30% from top
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1, // Allow unlimited connections
+                    paintStyle: trueStyle.paint,
+                    hoverPaintStyle: trueStyle.hover,
+                    overlays: [
+                        ['Label', { label: branchLabels.true || 'True', location: [0.5, -0.5], cssClass: 'endpoint-label' }]
+                    ]
+                });
+
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source-false`,
+                    anchor: [1, 0.7, 0, -1], // Right side, 70% from top
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1, // Allow unlimited connections
+                    paintStyle: falseStyle.paint,
+                    hoverPaintStyle: falseStyle.hover,
+                    overlays: [
+                        ['Label', { label: branchLabels.false || 'False', location: [0.5, -0.5], cssClass: 'endpoint-label' }]
+                    ]
+                });
+            } else {
+                // Single path: create one standard endpoint
+                this.jsPlumbInstance.addEndpoint(nodeEl, {
+                    uuid: `${nodeId}-source`,
+                    anchor: 'Right',
+                    isSource: true,
+                    isTarget: false,
+                    maxConnections: -1
+                });
+            }
+        },
+        
+        attachNodeEventHandlers(nodeEl, node) {
+            nodeEl.addEventListener('click', () => {
+                this.selectedNode = node;
+                this.deselectAllNodes();
+                nodeEl.classList.add('selected');
+            });
+            
+            nodeEl.addEventListener('dblclick', () => {
+                this.selectedNode = node;
+                this.showConfigModal = true;
+                this.loadNodeConfig(node);
+            });
+        },
+        
+        setupConnectionListeners() {
+            // Only setup once, reuse extractNodeId helper
+            if (!this.extractNodeIdFromEndpoint) {
+                this.extractNodeIdFromEndpoint = (endpointUuid) => {
+                    if (!endpointUuid) return null;
+                    // Handle boolean path endpoints: node-id-source-true, node-id-source-false
+                    const pathMatch = endpointUuid.match(/^(.+?)-source-(true|false)$/);
+                    if (pathMatch) {
+                        const result = { nodeId: pathMatch[1], path: pathMatch[2] };
+                        return result;
+                    }
+                    // Handle standard endpoints: node-id-source, node-id-target
+                    const match = endpointUuid.match(/^(.+?)-(?:source|target)$/);
+                    const result = match ? { nodeId: match[1], path: null } : { nodeId: endpointUuid, path: null };
+                    return result;
+                };
+            }
+            
+            // Bind connection events (only if not already bound)
+            if (!this.connectionListenersBound) {
+                const extractNodeId = this.extractNodeIdFromEndpoint;
+                
+                this.jsPlumbInstance.bind('connection', (info, originalEvent) => {
+                    // jsPlumb may pass (connection, event) - first arg could be the connection itself
+                    const conn = info?.connection ?? info;
+                    const effectiveInfo = conn?.sourceEndpoint ? conn : info;
+                    let sourceInfo = null;
+                    let targetInfo = null;
+                    
+                    // Try different ways to get the IDs
+                    // PRIORITIZE sourceEndpoint.uuid FIRST for branching endpoints (it contains the path)
+                    if (effectiveInfo.sourceEndpoint && (effectiveInfo.sourceEndpoint.uuid || effectiveInfo.sourceEndpoint.id)) {
+                        const endpointUuid = effectiveInfo.sourceEndpoint.uuid || effectiveInfo.sourceEndpoint.id;
+                        sourceInfo = extractNodeId(endpointUuid);
+                    } else if (effectiveInfo.sourceId || info?.sourceId) {
+                        sourceInfo = extractNodeId(effectiveInfo.sourceId || info.sourceId);
+                    } else if (effectiveInfo.source || info?.source) {
+                        const src = effectiveInfo.source ?? info.source;
+                        if (typeof src === 'string') {
+                            sourceInfo = extractNodeId(src);
+                        } else if (src?.id) {
+                            sourceInfo = extractNodeId(src.id);
+                        } else if (src?.element?.id) {
+                            sourceInfo = extractNodeId(src.element.id);
+                        } else {
+                            sourceInfo = extractNodeId(src);
+                        }
+                    }
+                    
+                    if (effectiveInfo.targetId || info?.targetId) {
+                        targetInfo = extractNodeId(effectiveInfo.targetId || info.targetId);
+                    } else if (effectiveInfo.target || info?.target) {
+                        const tgt = effectiveInfo.target ?? info.target;
+                        if (typeof tgt === 'string') {
+                            targetInfo = extractNodeId(tgt);
+                        } else if (tgt?.id) {
+                            targetInfo = extractNodeId(tgt.id);
+                        } else if (tgt?.element?.id) {
+                            targetInfo = extractNodeId(tgt.element.id);
+                        } else {
+                            targetInfo = extractNodeId(tgt);
+                        }
+                    } else if (effectiveInfo.targetEndpoint || info?.targetEndpoint) {
+                        const ep = effectiveInfo.targetEndpoint ?? info.targetEndpoint;
+                        targetInfo = extractNodeId(ep?.uuid || ep?.id);
+                    }
+                    
+                    // Extract node IDs and paths
+                    const sourceId = sourceInfo?.nodeId || sourceInfo;
+                    const targetId = targetInfo?.nodeId || targetInfo;
+                    const path = sourceInfo?.path || null;
+                    
+                    if (sourceId && targetId) {
+                        // Convert to regular array to avoid Alpine.js Proxy issues
+                        const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+                        // Check if edge already exists (with same path if applicable)
+                        const exists = edgesArray.some(e => {
+                            if (e && e.source === sourceId && e.target === targetId) {
+                                // If path is specified, check path match; otherwise any path matches
+                                return path ? e.path === path : true;
+                            }
+                            return false;
+                        });
+                        if (!exists) {
+                            // Create new array with the new edge (include path if present)
+                            const newEdge = path ? { source: sourceId, target: targetId, path: path } : { source: sourceId, target: targetId };
+                            this.edges = [...edgesArray, newEdge];
+                        }
+                    }
+                });
+                
+                this.jsPlumbInstance.bind('connectionDetached', (info) => {
+                    // jsPlumb may pass (connection, originalEvent) - connection is first arg
+                    const conn = info?.connection ?? info;
+                    const effectiveInfo = conn?.sourceEndpoint ? conn : info;
+                    let sourceInfo = null;
+                    let targetInfo = null;
+                    // CRITICAL: Prioritize sourceEndpoint.uuid for branching nodes (contains path: true/false)
+                    if (effectiveInfo.sourceEndpoint && (effectiveInfo.sourceEndpoint.uuid || effectiveInfo.sourceEndpoint.id)) {
+                        const endpointUuid = effectiveInfo.sourceEndpoint.uuid || effectiveInfo.sourceEndpoint.id;
+                        sourceInfo = extractNodeId(endpointUuid);
+                    } else if (effectiveInfo.sourceId || info?.sourceId) {
+                        sourceInfo = extractNodeId(effectiveInfo.sourceId || info.sourceId);
+                    } else if (effectiveInfo.source || info?.source) {
+                        const src = effectiveInfo.source ?? info.source;
+                        sourceInfo = extractNodeId(typeof src === 'string' ? src : src?.id ?? src?.element?.id);
+                    }
+                    if (effectiveInfo.targetEndpoint && (effectiveInfo.targetEndpoint.uuid || effectiveInfo.targetEndpoint.id)) {
+                        const endpointUuid = effectiveInfo.targetEndpoint.uuid || effectiveInfo.targetEndpoint.id;
+                        targetInfo = extractNodeId(endpointUuid);
+                    } else if (effectiveInfo.targetId || info?.targetId) {
+                        targetInfo = extractNodeId(effectiveInfo.targetId || info.targetId);
+                    } else if (effectiveInfo.target || info?.target) {
+                        const tgt = effectiveInfo.target ?? info.target;
+                        targetInfo = extractNodeId(typeof tgt === 'string' ? tgt : tgt?.id ?? tgt?.element?.id);
+                    }
+                    const sourceId = sourceInfo?.nodeId || sourceInfo;
+                    const targetId = targetInfo?.nodeId || targetInfo;
+                    const path = sourceInfo?.path ?? null;
+                    if (sourceId && targetId) {
+                        const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+                        this.edges = edgesArray.filter(e => {
+                            if (e && e.source === sourceId && e.target === targetId) {
+                                return path ? e.path !== path : false;
+                            }
+                            return true;
+                        });
+                    }
+                });
+                
+                // Sync edges with jsPlumb's actual connections
+                // This catches connections made manually that might not trigger events
+                const syncEdgesFromJsPlumb = () => {
+                    try {
+                        if (!this.jsPlumbInstance || !this.jsPlumbInstance.getAllConnections) return;
+                        
+                        const allConnections = this.jsPlumbInstance.getAllConnections();
+                        const edgesArray = [];
+                        
+                        allConnections.forEach(conn => {
+                            try {
+                            // jsPlumb stores endpoints in conn.endpoints array with {id: "ep_X"}
+                            // We need to get the full endpoint object from jsPlumb to access the UUID
+                            let sourceEndpointUuid = null;
+                            let targetEndpointUuid = null;
+                            
+                            try {
+                                // Method 1: Get endpoint from endpoints array and query jsPlumb for full object
+                                if (conn.endpoints && conn.endpoints.length >= 2) {
+                                    const sourceEndpointId = conn.endpoints[0]?.id;
+                                    const targetEndpointId = conn.endpoints[1]?.id;
+                                    
+                                    if (sourceEndpointId) {
+                                        // jsPlumb endpoint IDs are like "ep_2", but we need the UUID we set (like "node-id-source-true")
+                                        // getEndpoint() with ID might return the endpoint but UUID might be the ID
+                                        // So get from element instead to get the actual UUID
+                                        const sourceEl = typeof conn.source === 'string' ? document.getElementById(conn.source) : conn.source;
+                                        if (sourceEl) {
+                                            // Try to get endpoint by UUID directly (for branching nodes, try both true and false)
+                                            // First, check if this is a branching node by checking if it has multiple source endpoints
+                                            const node = this.nodes.find(n => n.id === conn.sourceId);
+                                            const pluginType = node?.data?.pluginType;
+                                            const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                                            const hasBranching = plugin?.branch_context_key;
+                                            
+                                            if (hasBranching) {
+                                                // Try to get endpoints by their expected UUIDs
+                                                const trueEndpointUuid = `${conn.sourceId}-source-true`;
+                                                const falseEndpointUuid = `${conn.sourceId}-source-false`;
+                                                
+                                                // Try to get connection by checking which endpoint it's connected to
+                                                const trueEndpoint = this.jsPlumbInstance.getEndpoint(trueEndpointUuid);
+                                                const falseEndpoint = this.jsPlumbInstance.getEndpoint(falseEndpointUuid);
+                                                
+                                                
+                                                // Check which endpoint has this connection
+                                                // CRITICAL: Check the connection's sourceEndpoint directly instead of querying
+                                                // because getConnections() may return connections from both endpoints
+                                                let foundOnTrue = false;
+                                                let foundOnFalse = false;
+                                                
+                                                // Get the connection's actual sourceEndpoint object
+                                                const connSourceEndpoint = conn.sourceEndpoint || (conn.endpoints && conn.endpoints[0]);
+                                                const connSourceEndpointId = connSourceEndpoint?.id || connSourceEndpoint?.uuid || null;
+                                                
+                                                
+                                                // CRITICAL: Compare the actual endpoint objects, not just IDs
+                                                // jsPlumb may use internal IDs that don't match UUIDs
+                                                if (trueEndpoint && connSourceEndpoint) {
+                                                    // Direct object comparison - if they're the same object, it's a match
+                                                    foundOnTrue = (connSourceEndpoint === trueEndpoint);
+                                                    // Also check IDs as fallback
+                                                    if (!foundOnTrue) {
+                                                        const trueEndpointId = trueEndpoint.id || trueEndpoint.uuid;
+                                                        foundOnTrue = (connSourceEndpointId === trueEndpointId || connSourceEndpointId === trueEndpointUuid);
+                                                    }
+                                                    if (foundOnTrue) {
+                                                        sourceEndpointUuid = trueEndpointUuid;
+                                                    }
+                                                }
+                                                
+                                                if (falseEndpoint && connSourceEndpoint && !foundOnTrue) {
+                                                    // Direct object comparison - if they're the same object, it's a match
+                                                    foundOnFalse = (connSourceEndpoint === falseEndpoint);
+                                                    // Also check IDs as fallback
+                                                    if (!foundOnFalse) {
+                                                        const falseEndpointId = falseEndpoint.id || falseEndpoint.uuid;
+                                                        foundOnFalse = (connSourceEndpointId === falseEndpointId || connSourceEndpointId === falseEndpointUuid);
+                                                    }
+                                                    if (foundOnFalse) {
+                                                        sourceEndpointUuid = falseEndpointUuid;
+                                                    }
+                                                }
+                                                
+                                                // If still no match, try querying jsPlumb for which endpoint has this connection
+                                                // This is a fallback in case object comparison doesn't work
+                                                if (!sourceEndpointUuid && hasBranching) {
+                                                    // Query both endpoints to see which one has this connection
+                                                    if (trueEndpoint) {
+                                                        const trueConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: trueEndpoint});
+                                                        if (trueConnections.some(c => c.id === conn.id)) {
+                                                            sourceEndpointUuid = trueEndpointUuid;
+                                                            foundOnTrue = true;
+                                                        }
+                                                    }
+                                                    if (!sourceEndpointUuid && falseEndpoint) {
+                                                        const falseConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: falseEndpoint});
+                                                        if (falseConnections.some(c => c.id === conn.id)) {
+                                                            sourceEndpointUuid = falseEndpointUuid;
+                                                            foundOnFalse = true;
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                
+                                            }
+                                            
+                                            // Fallback: get all endpoints from element and find matching one
+                                            if (!sourceEndpointUuid) {
+                                                const endpoints = this.jsPlumbInstance.getEndpoints(sourceEl);
+                                                // Find endpoint that matches this connection
+                                                // CRITICAL: Only match by connection ID, not by sourceId/targetId
+                                                const matchingEndpoint = endpoints.find(ep => {
+                                                    const epConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: ep});
+                                                    return epConnections.some(c => c.id === conn.id);
+                                                });
+                                                if (matchingEndpoint) {
+                                                    // Try to get UUID by querying with the expected UUIDs
+                                                    const expectedUuids = [`${conn.sourceId}-source`, `${conn.sourceId}-source-true`, `${conn.sourceId}-source-false`];
+                                                    for (const expectedUuid of expectedUuids) {
+                                                        const ep = this.jsPlumbInstance.getEndpoint(expectedUuid);
+                                                        if (ep && ep === matchingEndpoint) {
+                                                            sourceEndpointUuid = expectedUuid;
+                                                            break;
+                                                        }
+                                                    }
+                                                    // If still no UUID, use the matching endpoint's properties
+                                                    if (!sourceEndpointUuid) {
+                                                        sourceEndpointUuid = matchingEndpoint.uuid || matchingEndpoint.id;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // Final fallback: use sourceId if UUID is still "ep_X" or not found
+                                            // BUT: For branching nodes, endpoint matching should have set sourceEndpointUuid
+                                            // Only use fallback if endpoint matching didn't run or failed
+                                            if (hasBranching) {
+                                                // For branching nodes, if endpoint matching didn't set sourceEndpointUuid correctly,
+                                                // it means matching failed - don't use fallback as it will lose path info
+                                                if (!sourceEndpointUuid || (sourceEndpointUuid.startsWith('ep_') && !sourceEndpointUuid.includes('-source-true') && !sourceEndpointUuid.includes('-source-false'))) {
+                                                    console.warn(`Endpoint matching may have failed for branching node connection ${conn.id}, UUID: ${sourceEndpointUuid}`);
+                                                }
+                                            } else {
+                                                // Non-branching node: safe to use fallback
+                                                if (!sourceEndpointUuid || sourceEndpointUuid.startsWith('ep_')) {
+                                                    sourceEndpointUuid = conn.sourceId;
+                                                }
+                                            }
+                                        } else {
+                                            // Element not found
+                                            if (!hasBranching) {
+                                                sourceEndpointUuid = conn.sourceId;
+                                            } else {
+                                                console.warn(`Element not found for branching node connection ${conn.id}, cannot determine path`);
+                                            }
+                                        }
+                                    }
+                                    
+                                    if (targetEndpointId) {
+                                        const targetEndpoint = this.jsPlumbInstance.getEndpoint(targetEndpointId);
+                                        if (targetEndpoint) {
+                                            targetEndpointUuid = targetEndpoint.uuid || targetEndpoint.id || targetEndpointId;
+                                        }
+                                    }
+                                }
+                                
+                                // Method 2: Fallback - try direct properties
+                                if (!sourceEndpointUuid) {
+                                    if (conn.sourceEndpoint?.uuid) {
+                                        sourceEndpointUuid = conn.sourceEndpoint.uuid;
+                                    } else if (conn.sourceId) {
+                                        // Last resort: use sourceId (won't have path info)
+                                        sourceEndpointUuid = conn.sourceId;
+                                    }
+                                }
+                                
+                                if (!targetEndpointUuid) {
+                                    if (conn.targetEndpoint?.uuid) {
+                                        targetEndpointUuid = conn.targetEndpoint.uuid;
+                                    } else if (conn.targetId) {
+                                        targetEndpointUuid = conn.targetId;
+                                    }
+                                }
+                            } catch (e) {
+                                // Fallback to sourceId/targetId, but only if not a branching node
+                                const node = this.nodes.find(n => n.id === conn.sourceId);
+                                const pluginType = node?.data?.pluginType;
+                                const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                                const isBranchingNode = plugin?.branch_context_key;
+                                
+                                if (!isBranchingNode || !sourceEndpointUuid) {
+                                    sourceEndpointUuid = conn.sourceId;
+                                    targetEndpointUuid = conn.targetId;
+                                }
+                            }
+                            
+                            // Final fallback for branching nodes: if endpoint matching didn't set sourceEndpointUuid, use sourceId
+                            // This means endpoint matching failed, so we can't determine the path
+                            if (!sourceEndpointUuid) {
+                                const node = this.nodes.find(n => n.id === conn.sourceId);
+                                const pluginType = node?.data?.pluginType;
+                                const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                                const isBranchingNode = plugin?.branch_context_key;
+                                
+                                if (isBranchingNode) {
+                                    // Endpoint matching failed - log a warning
+                                    console.warn(`Failed to determine endpoint for branching node connection ${conn.id} from ${conn.sourceId} to ${conn.targetId}`);
+                                }
+                                sourceEndpointUuid = conn.sourceId;
+                            }
+                            
+                            const sourceInfo = extractNodeId(sourceEndpointUuid);
+                            const targetInfo = extractNodeId(targetEndpointUuid);
+                            const sourceId = sourceInfo?.nodeId || sourceInfo;
+                            const targetId = targetInfo?.nodeId || targetInfo;
+                            const path = sourceInfo?.path || null;
+                            // Skip connections where target is not a workflow node (e.g. jsPlumb_3_70 from in-progress drag)
+                            const validNodeIds = new Set(this.nodes.map(n => n.id));
+                            if (sourceId && targetId && validNodeIds.has(sourceId) && validNodeIds.has(targetId)) {
+                                const edge = path ? { source: sourceId, target: targetId, path: path } : { source: sourceId, target: targetId };
+                                // Remove verbose debug logs - paths are working
+                                edgesArray.push(edge);
+                            }
+                            } catch (e) {
+                                return; // Skip this connection so one bad connection does not break the editor
+                            }
+                        });
+                        
+                        // Merge with existing edges - preserve paths from existing edges
+                        // Strategy: NEVER overwrite edges that have paths with edges that don't have paths
+                        const existingEdges = Array.isArray(this.edges) ? [...this.edges] : [];
+                        const mergedEdges = [];
+                        
+                        // Create a set of existing edges with paths (by source->target:path)
+                        const existingPathsSet = new Set();
+                        existingEdges.forEach(e => {
+                            if (e.path) {
+                                existingPathsSet.add(`${e.source}->${e.target}:${e.path}`);
+                            }
+                        });
+                        
+                        // Create a map of existing edges by source->target for quick lookup
+                        // Also create a map by source->target:path for exact path matching
+                        const existingBySourceTarget = new Map();
+                        const existingByPath = new Map();
+                        existingEdges.forEach(e => {
+                            const key = `${e.source}->${e.target}`;
+                            if (!existingBySourceTarget.has(key)) {
+                                existingBySourceTarget.set(key, []);
+                            }
+                            existingBySourceTarget.get(key).push(e);
+                            
+                            // Also index by path for exact matching
+                            if (e.path) {
+                                const pathKey = `${e.source}->${e.target}:${e.path}`;
+                                existingByPath.set(pathKey, e);
+                            }
+                        });
+                        
+                        // Keep ALL existing edges with paths - these are the source of truth
+                        existingEdges.forEach(e => {
+                            if (e.path) {
+                                mergedEdges.push(e);
+                            }
+                        });
+                        
+                        // Add edges from jsPlumb, but ONLY if they don't conflict with existing edges with paths
+                        // CRITICAL: Existing edges with paths take precedence - never overwrite them
+                        edgesArray.forEach(e => {
+                            const baseKey = `${e.source}->${e.target}`;
+                            const pathKey = e.path ? `${e.source}->${e.target}:${e.path}` : null;
+                            
+                            // CRITICAL: First check if we already have this EXACT edge (same source, target, and path)
+                            // If we do, skip it - existing edges take precedence
+                            if (pathKey && existingPathsSet.has(pathKey)) {
+                                // We already have this exact edge with this path - skip it
+                                return; // Skip this edge
+                            }
+                            
+                            // Check if we already have an edge with a path for this source->target
+                            const existingWithPath = existingBySourceTarget.get(baseKey)?.find(ex => ex.path);
+                            
+                            
+                            if (existingWithPath) {
+                                // Same source->target: each target can only be on ONE path (no duplicates)
+                                if (e.path && e.path !== existingWithPath.path) {
+                                    // Same target, different path = bogus duplicate (replace old with new from jsPlumb)
+                                    const idx = mergedEdges.findIndex(m => m.source === e.source && m.target === e.target);
+                                    if (idx >= 0) {
+                                        mergedEdges[idx] = e;
+                                    } else {
+                                        mergedEdges.push(e);
+                                    }
+                                } else if (!e.path) {
+                                    // New edge has no path, existing has path - skip it (keep existing)
+                                }
+                                // Same path: already in mergedEdges, skip
+                            } else {
+                                // No existing edge with path - add this edge
+                                const alreadyExists = mergedEdges.some(m => m.source === e.source && m.target === e.target && (!e.path || m.path === e.path));
+                                if (!alreadyExists) {
+                                    mergedEdges.push(e);
+                                } else {
+                                }
+                            }
+                        });
+                        
+                        // Update this.edges with merged edges
+                        this.edges = mergedEdges;
+                    } catch (e) {
+                        console.error('Error syncing edges from jsPlumb:', e);
+                    }
+                };
+                
+                // Listen to connection:establish event (fires when connection is fully established)
+                this.jsPlumbInstance.bind('connection:establish', (info) => {
+                    setTimeout(syncEdgesFromJsPlumb, 50); // Small delay to ensure connection is registered
+                });
+                
+                // Sync edges periodically as backup (catches any connections made manually)
+                setInterval(() => {
+                    syncEdgesFromJsPlumb();
+                }, 2000); // Sync every 2 seconds
+                
+                // Also sync after a short delay to catch initial connections
+                setTimeout(syncEdgesFromJsPlumb, 500);
+                
+                this.connectionListenersBound = true;
+            }
+        },
+        
+        deselectAllNodes() {
+            document.querySelectorAll('.workflow-node').forEach(el => {
+                el.classList.remove('selected');
+            });
+        },
+        
+        getExistingNodeElements() {
+            const container = document.getElementById('workflow-canvas');
+            if (!container) return new Map();
+            const nodeMap = new Map();
+            container.querySelectorAll('.workflow-node').forEach(el => {
+                nodeMap.set(el.id, el);
+            });
+            return nodeMap;
+        },
+        
+        nodeExistsInDOM(nodeId) {
+            const container = document.getElementById('workflow-canvas');
+            return container && container.querySelector(`#${nodeId}`) !== null;
+        },
+        
+        preserveConnections() {
+            // Capture current connections from jsPlumb
+            if (!this.jsPlumbInstance || !this.jsPlumbInstance.getAllConnections) return;
+            
+            // Ensure extractNodeIdFromEndpoint is available (use the one from setupConnectionListeners)
+            if (!this.extractNodeIdFromEndpoint) {
+                this.extractNodeIdFromEndpoint = (endpointUuid) => {
+                    if (!endpointUuid) return null;
+                    const pathMatch = endpointUuid.match(/^(.+?)-source-(true|false)$/);
+                    if (pathMatch) {
+                        return { nodeId: pathMatch[1], path: pathMatch[2] };
+                    }
+                    const match = endpointUuid.match(/^(.+?)-(?:source|target)$/);
+                    return match ? { nodeId: match[1], path: null } : { nodeId: endpointUuid, path: null };
+                };
+            }
+            
+            const currentConnections = [];
+            try {
+                this.jsPlumbInstance.getAllConnections().forEach(conn => {
+                    const sourceInfo = this.extractNodeIdFromEndpoint(conn.sourceId || conn.source?.uuid || conn.source);
+                    const targetInfo = this.extractNodeIdFromEndpoint(conn.targetId || conn.target?.uuid || conn.target);
+                    const sourceId = sourceInfo?.nodeId || sourceInfo;
+                    const targetId = targetInfo?.nodeId || targetInfo;
+                    const path = sourceInfo?.path || null;
+                    if (sourceId && targetId) {
+                        const edge = path ? { source: sourceId, target: targetId, path: path } : { source: sourceId, target: targetId };
+                        currentConnections.push(edge);
+                    }
+                });
+            } catch (e) {
+                console.error('Error getting connections:', e);
+                return; // Don't modify edges if we can't get current connections
+            }
+            
+            // Merge with edges array (edges is source of truth) - only add new ones, never clear
+            currentConnections.forEach(conn => {
+                const exists = this.edges.some(e => {
+                    if (e && e.source === conn.source && e.target === conn.target) {
+                        // If path is specified, check path match
+                        return conn.path ? e.path === conn.path : true;
+                    }
+                    return false;
+                });
+                if (!exists) {
+                    this.edges.push(conn);
+                }
+            });
+        },
+        
+        async restoreConnections() {
+            // Restore connections from edges array
+            if (!this.jsPlumbInstance) return;
+            
+            // Ensure extractNodeIdFromEndpoint is available (use the one from setupConnectionListeners)
+            if (!this.extractNodeIdFromEndpoint) {
+                this.extractNodeIdFromEndpoint = (endpointUuid) => {
+                    if (!endpointUuid) return null;
+                    const pathMatch = endpointUuid.match(/^(.+?)-source-(true|false)$/);
+                    if (pathMatch) {
+                        return { nodeId: pathMatch[1], path: pathMatch[2] };
+                    }
+                    const match = endpointUuid.match(/^(.+?)-(?:source|target)$/);
+                    return match ? { nodeId: match[1], path: null } : { nodeId: endpointUuid, path: null };
+                };
+            }
+            
+            // Convert Alpine.js reactive array to regular array if needed
+            const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+            
+            // Get all existing connections to avoid duplicates
+            const existingConnections = new Set();
+            try {
+                if (this.jsPlumbInstance.getAllConnections) {
+                    this.jsPlumbInstance.getAllConnections().forEach(conn => {
+                        const sourceInfo = this.extractNodeIdFromEndpoint(conn.sourceId || conn.source?.uuid || conn.source);
+                        const targetInfo = this.extractNodeIdFromEndpoint(conn.targetId || conn.target?.uuid || conn.target);
+                        const sourceId = sourceInfo?.nodeId || sourceInfo;
+                        const targetId = targetInfo?.nodeId || targetInfo;
+                        const path = sourceInfo?.path || null;
+                        const key = path ? `${sourceId}->${targetId}:${path}` : `${sourceId}->${targetId}`;
+                        if (sourceId && targetId) {
+                            existingConnections.add(key);
+                        }
+                    });
+                }
+            } catch (e) {
+                // getAllConnections might not be available, continue anyway
+            }
+            
+            let restoredCount = 0;
+            let skippedCount = 0;
+            // Process edges sequentially to avoid race conditions
+            for (const edge of edgesArray) {
+                try {
+                    // Normalize path for comparison
+                    let normalizedPathForCheck = edge.path;
+                    if (edge.path === 'success') {
+                        normalizedPathForCheck = 'true';
+                    } else if (edge.path === 'fail') {
+                        normalizedPathForCheck = 'false';
+                    }
+                    const connectionKey = normalizedPathForCheck ? `${edge.source}->${edge.target}:${normalizedPathForCheck}` : `${edge.source}->${edge.target}`;
+                    if (existingConnections.has(connectionKey)) {
+                        skippedCount++;
+                        continue; // Connection already exists
+                    }
+                    
+                    // Determine source endpoint based on path
+                    // Normalize path values (handle "success" as "true", "fail" as "false")
+                    let normalizedPath = edge.path;
+                    if (edge.path === 'success') {
+                        normalizedPath = 'true';
+                    } else if (edge.path === 'fail') {
+                        normalizedPath = 'false';
+                    }
+                    
+                    // If no path but this is a branching node, we need to check which endpoint to use
+                    // For conditional nodes, if path is missing, we can't determine which branch to use
+                    // In this case, we should skip or use a default
+                    if (!normalizedPath) {
+                        const node = this.nodes.find(n => n.id === edge.source);
+                        const pluginType = node?.data?.pluginType;
+                        const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                        if (plugin?.branch_context_key) {
+                            console.warn(`Connection from branching node ${edge.source} to ${edge.target} has no path! Skipping.`);
+                            continue; // Skip connections without paths for branching nodes
+                        }
+                    }
+                    
+                    let sourceEndpoint = normalizedPath ? `${edge.source}-source-${normalizedPath}` : `${edge.source}-source`;
+                    const targetEndpoint = `${edge.target}-target`;
+                    
+                    // Verify nodes exist in DOM
+                    const sourceEl = document.getElementById(edge.source);
+                    const targetEl = document.getElementById(edge.target);
+                    
+                    if (!sourceEl || !targetEl) {
+                        console.warn(`Cannot restore connection ${edge.source}->${edge.target}: nodes not found in DOM`);
+                        return;
+                    }
+                    
+                    // Ensure endpoints exist - they should have been created in addNodeEndpoints
+                    // But if they don't exist, create them now
+                    let sourceEndpointObj = this.jsPlumbInstance.getEndpoint(sourceEndpoint);
+                    let targetEndpointObj = this.jsPlumbInstance.getEndpoint(targetEndpoint);
+                    
+                    // If endpoint exists and this is a path-based connection, always recreate it
+                    // to ensure it has maxConnections: -1 (jsPlumb doesn't allow updating maxConnections)
+                    if (sourceEndpointObj && edge.path) {
+                        // Check if this is a branching endpoint
+                        const node = this.nodes.find(n => n.id === edge.source);
+                        const pluginType = node?.data?.pluginType;
+                        const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                        if (plugin?.branch_context_key) {
+                            // Delete all connections from this endpoint first, then delete the endpoint
+                            try {
+                                const connections = this.jsPlumbInstance.getConnections({ source: sourceEndpoint });
+                                if (connections && connections.length > 0) {
+                                    connections.forEach(conn => {
+                                        this.jsPlumbInstance.deleteConnection(conn);
+                                    });
+                                }
+                                this.jsPlumbInstance.deleteEndpoint(sourceEndpointObj);
+                                sourceEndpointObj = null; // Will be recreated below
+                            } catch (e) {
+                                console.warn('Could not delete existing endpoint, will try to use it:', e);
+                            }
+                        }
+                    }
+                    
+                    if (!sourceEndpointObj) {
+                        // Check if this is a path-based endpoint
+                        if (edge.path) {
+                            // Find the node to get plugin info for positioning
+                            const node = this.nodes.find(n => n.id === edge.source);
+                            const pluginType = node?.data?.pluginType;
+                            const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                            const branchLabels = plugin?.branch_labels || {true: "True", false: "False"};
+                            
+                            // Normalize path value (handle "success" as "true", "fail" as "false")
+                            const normalizedPath = edge.path === 'success' ? 'true' : (edge.path === 'fail' ? 'false' : edge.path);
+
+                            // Position based on path (true on top, false on bottom)
+                            const anchorY = normalizedPath === 'true' ? 0.3 : 0.7;
+
+                            // Use plugin-declared branch colors
+                            const branchColors = plugin?.branch_colors || {true: 'green', false: 'red'};
+                            const restoreColorStyles = {
+                                green: { fill: '#10b981', stroke: '#059669' },
+                                red:   { fill: '#ef4444', stroke: '#dc2626' }
+                            };
+                            const pathColorKey = branchColors[normalizedPath] || (normalizedPath === 'true' ? 'green' : 'red');
+                            const pathColor = restoreColorStyles[pathColorKey] || restoreColorStyles.green;
+
+                            // Use normalized path for endpoint UUID to ensure consistency
+                            sourceEndpoint = `${edge.source}-source-${normalizedPath}`;
+
+                            this.jsPlumbInstance.addEndpoint(sourceEl, {
+                                uuid: sourceEndpoint,
+                                anchor: [1, anchorY, 0, -1],
+                                isSource: true,
+                                isTarget: false,
+                                maxConnections: -1, // Allow unlimited connections
+                                paintStyle: { fill: pathColor.fill, stroke: pathColor.stroke, strokeWidth: 2 },
+                                overlays: [
+                                    ['Label', { label: branchLabels[normalizedPath] || edge.path, location: [0.5, -0.5], cssClass: 'endpoint-label' }]
+                                ]
+                            });
+                        } else {
+                            this.jsPlumbInstance.addEndpoint(sourceEl, {
+                                uuid: sourceEndpoint,
+                                anchor: 'Right',
+                                isSource: true,
+                                isTarget: false
+                            });
+                        }
+                    }
+                    
+                    if (!targetEndpointObj) {
+                        this.jsPlumbInstance.addEndpoint(targetEl, {
+                            uuid: targetEndpoint,
+                            anchor: 'Left',
+                            isSource: false,
+                            isTarget: true
+                        });
+                    }
+                    
+                    // Small delay to ensure endpoints are registered
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                    
+                    try {
+                        // Connect using endpoint UUIDs (more reliable than elements)
+                        const connection = this.jsPlumbInstance.connect({
+                            uuids: [sourceEndpoint, targetEndpoint]
+                        });
+                        
+                        if (connection) {
+                            restoredCount++;
+                            
+                            // Also add to this.edges if not already present (for saving)
+                            // This ensures restored connections are saved when workflow is saved
+                            const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+                            const exists = edgesArray.some(e => {
+                                if (e && e.source === edge.source && e.target === edge.target) {
+                                    return edge.path ? e.path === edge.path : true;
+                                }
+                                return false;
+                            });
+                            if (!exists) {
+                                const newEdge = edge.path ? { source: edge.source, target: edge.target, path: edge.path } : { source: edge.source, target: edge.target };
+                                this.edges = [...edgesArray, newEdge];
+                            }
+                        }
+                    } catch (e) {
+                        console.error(`Failed to connect ${edge.source}->${edge.target}:`, e);
+                        // Try alternative method using elements directly
+                        try {
+                            const fallbackConnection = this.jsPlumbInstance.connect({
+                                source: sourceEl,
+                                target: targetEl,
+                                anchors: ['Right', 'Left']
+                            });
+                            if (fallbackConnection) {
+                                restoredCount++;
+                                
+                                // Also add to this.edges if not already present (for saving)
+                                const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+                                const exists = edgesArray.some(e => e && e.source === edge.source && e.target === edge.target);
+                                if (!exists) {
+                                    this.edges = [...edgesArray, { source: edge.source, target: edge.target }];
+                                }
+                            }
+                        } catch (e2) {
+                            console.error(`Fallback connection also failed: ${e2}`);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Failed to restore connection ${edge.source}->${edge.target}:`, e);
+                }
+            }
+            
+        },
+        
+        updateNodePosition(nodeId, position) {
+            const nodeIndex = this.nodes.findIndex(n => n.id === nodeId);
+            if (nodeIndex !== -1) {
+                // Update position in data model
+                this.nodes[nodeIndex].position = position;
+            }
+            
+            // Update DOM element position without recreating - but only if element exists
+            const container = document.getElementById('workflow-canvas');
+            if (container) {
+                // Find all nodes with this ID (in case of duplicates)
+                const nodeEls = container.querySelectorAll(`#${nodeId}`);
+                if (nodeEls.length > 0) {
+                    // Update all duplicates to the same position
+                    nodeEls.forEach(nodeEl => {
+                        nodeEl.style.left = `${position.x}px`;
+                        nodeEl.style.top = `${position.y}px`;
+                    });
+                    // Repaint connections
+                    if (this.jsPlumbInstance) {
+                        this.jsPlumbInstance.repaintEverything();
+                    }
+                } else {
+                    // Node not found in DOM - this shouldn't happen, but if it does, 
+                    // trigger updateNodes to recreate it (but only if not dragging)
+                    if (!this.isDragging) {
+                        console.warn(`Node ${nodeId} not found in DOM during position update, triggering updateNodes`);
+                        this.updateNodes();
+                    }
+                }
+            }
+        },
+        
+        addNode(plugin, position) {
+            // Generate unique node ID with timestamp + random component to prevent collisions
+            const newNodeId = `node-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+            
+            // Check if a node with this plugin type already exists at this exact position (within 5px)
+            const existingAtPosition = this.nodes.find(n => {
+                const nodePluginType = n.data?.pluginType || n.plugin_type;
+                if (nodePluginType !== plugin.plugin_type) return false;
+                const nodePos = n.position || { x: 0, y: 0 };
+                const dx = Math.abs(nodePos.x - position.x);
+                const dy = Math.abs(nodePos.y - position.y);
+                return dx < 5 && dy < 5;
+            });
+            
+            if (existingAtPosition) {
+                return;
+            }
+            
+            const newNode = {
+                id: newNodeId,
+                position: position,
+                data: { 
+                    label: plugin.display_name,
+                    nodeType: 'plugin',
+                    pluginType: plugin.plugin_type,
+                    config: {}
+                }
+            };
+            // Check for duplicates by ID (shouldn't happen with timestamp-based IDs, but safety check)
+            if (this.nodes.some(n => n.id === newNode.id)) {
+                console.warn('Node with ID already exists:', newNode.id);
+                return;
+            }
+            
+            this.nodes = [...this.nodes, newNode];
+            
+            // Debounce updateNodes to prevent rapid successive calls
+            if (this.updateNodesTimeout) {
+                clearTimeout(this.updateNodesTimeout);
+            }
+            this.updateNodesTimeout = setTimeout(() => {
+                this.updateNodes();
+            }, 10); // Small delay to batch rapid calls
+        },
+        
+        getViewportCenterInCanvasCoords(offsetY = 0) {
+            const viewport = document.getElementById('canvas-viewport');
+            const wrapper = document.getElementById('workflow-canvas-wrapper');
+            if (!viewport || !wrapper) return { x: 100, y: 100 + offsetY };
+            const vRect = viewport.getBoundingClientRect();
+            const wRect = wrapper.getBoundingClientRect();
+            const zoom = this.canvasZoom != null ? this.canvasZoom : 1;
+            const panX = this.canvasPanX != null ? this.canvasPanX : 0;
+            const panY = this.canvasPanY != null ? this.canvasPanY : 0;
+            const centerScreenX = vRect.left + vRect.width / 2;
+            const centerScreenY = vRect.top + vRect.height / 2;
+            const canvasX = (centerScreenX - wRect.left - panX) / zoom - 75;
+            const canvasY = (centerScreenY - wRect.top - panY) / zoom + offsetY;
+            return { x: Math.round(canvasX), y: Math.round(canvasY) };
+        },
+
+        addStartNode() {
+            // Check if start node already exists
+            if (this.nodes.some(n => n.id === 'start' || n.data?.nodeType === 'start')) {
+                showToast('Start node already exists', 'warning');
+                return;
+            }
+            
+            // Check DOM too
+            const container = document.getElementById('workflow-canvas');
+            if (container && container.querySelector('#start')) {
+                showToast('Start node already exists in DOM', 'warning');
+                return;
+            }
+            
+            const position = this.getViewportCenterInCanvasCoords(0);
+            
+            const newNode = {
+                id: 'start',
+                position: position,
+                data: { 
+                    label: 'Start',
+                    nodeType: 'start'
+                }
+            };
+            
+            this.nodes = [...this.nodes, newNode];
+            
+            // Debounce updateNodes
+            if (this.updateNodesTimeout) {
+                clearTimeout(this.updateNodesTimeout);
+            }
+            this.updateNodesTimeout = setTimeout(() => {
+                this.updateNodes();
+            }, 10);
+        },
+        
+        addLoopNode() {
+            // Debounce double-click: only one Loop per ~400ms (Start/End prevent multiple by design; Loop does not)
+            const now = Date.now();
+            if (this.lastLoopAddTime != null && (now - this.lastLoopAddTime) < 400) {
+                return;
+            }
+            this.lastLoopAddTime = now;
+            const position = this.getViewportCenterInCanvasCoords(80);
+            const newNode = {
+                id: `loop-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                position: position,
+                data: { 
+                    label: 'Loop',
+                    nodeType: 'loop',
+                    config: {
+                        array_source: 'targets',
+                        item_key: 'target',
+                        index_key: '_loop_index',
+                        delay: 0
+                    }
+                }
+            };
+            
+            this.nodes = [...this.nodes, newNode];
+            
+            // Debounce updateNodes
+            if (this.updateNodesTimeout) {
+                clearTimeout(this.updateNodesTimeout);
+            }
+            this.updateNodesTimeout = setTimeout(() => {
+                this.updateNodes();
+            }, 10);
+        },
+        
+        addEndNode() {
+            // Check if end node already exists in nodes array
+            const existingEndNode = this.nodes.find(n => n.data?.nodeType === 'end');
+            if (existingEndNode) {
+                return;
+            }
+            
+            // Check DOM too
+            const container = document.getElementById('workflow-canvas');
+            if (container) {
+                // Check for any end node in DOM by looking for nodes with end class or checking node data
+                const endNodes = Array.from(container.querySelectorAll('.workflow-node.end'));
+                if (endNodes.length > 0) {
+                    return;
+                }
+            }
+            
+            const position = this.getViewportCenterInCanvasCoords(160);
+            
+            const newNode = {
+                id: `end-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                position: position,
+                data: { 
+                    label: 'End',
+                    nodeType: 'end'
+                }
+            };
+            
+            this.nodes = [...this.nodes, newNode];
+            
+            // Debounce updateNodes
+            if (this.updateNodesTimeout) {
+                clearTimeout(this.updateNodesTimeout);
+            }
+            this.updateNodesTimeout = setTimeout(() => {
+                this.updateNodes();
+            }, 10);
+        },
+        
+        getPluginsByCategory(category) {
+            if (category === 'uncategorized') {
+                return this.plugins.filter(p => !p.plugin_category || p.plugin_category === '');
+            }
+            return this.plugins.filter(p => p.plugin_category === category);
+        },
+        
+        handleDragStart(event, plugin) {
+            event.dataTransfer.setData('application/reactflow', JSON.stringify(plugin));
+            event.dataTransfer.effectAllowed = 'move';
+        },
+        
+        loadNodeConfig(node) {
+            const plugin = this.plugins.find(p => p.plugin_type === node.data?.pluginType);
+            if (!plugin) {
+                this.nodeConfig = node.data?.config || {};
+                this.renderConfigForm(null);
+                return;
+            }
+            
+            this.nodeConfig = node.data?.config || {};
+            this.renderConfigForm(plugin);
+        },
+        
+        renderObjectFields(key, prop, currentValue, prefix = '', requiredFields = [], pluginType = null) {
+            // Render nested object properties as form fields
+            const objectValue = currentValue && typeof currentValue === 'object' ? currentValue : {};
+            const objectProperties = prop.properties || {};
+            const objectRequired = prop.required || [];
+            let html = `<div class="space-y-3 pl-4 border-l-2 border-gray-300 dark:border-gray-600">`;
+            
+            for (const [nestedKey, nestedProp] of Object.entries(objectProperties)) {
+                const nestedValue = objectValue[nestedKey] !== undefined ? objectValue[nestedKey] : (nestedProp.default !== undefined ? nestedProp.default : '');
+                const fieldId = prefix ? `config-${prefix}-${nestedKey}` : `config-${key}-${nestedKey}`;
+                const isNestedRequired = objectRequired.includes(nestedKey);
+                const nestedTitle = nestedProp.title || nestedProp.description || nestedKey;
+                const nestedHelp = nestedProp.help || nestedProp.helpText || (nestedProp.title ? nestedProp.description : null);
+                const nestedPlaceholder = nestedProp.placeholder || '';
+                
+                html += `<div class="mb-3">`;
+                html += `<label class="block text-sm font-medium mb-1 dark:text-gray-300 flex items-center gap-2">`;
+                html += `<span>${this.escapeHtml(nestedTitle)}</span>`;
+                if (isNestedRequired) {
+                    html += `<span class="text-red-500" title="Required field">*</span>`;
+                }
+                if (nestedHelp) {
+                    html += `<i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" data-tooltip="${this.escapeHtml(nestedHelp)}"></i>`;
+                }
+                html += `</label>`;
+                
+                // Handle union types (e.g., ["string", "number", "boolean"])
+                const propType = Array.isArray(nestedProp.type) ? nestedProp.type[0] : nestedProp.type;
+                
+                if (nestedProp.enum) {
+                    html += `<select id="${fieldId}" class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isNestedRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                    nestedProp.enum.forEach(option => {
+                        const optionLabel = typeof option === 'object' ? (option.label || option.value) : option;
+                        const optionValue = typeof option === 'object' ? option.value : option;
+                        html += `<option value="${this.escapeHtml(String(optionValue))}" ${nestedValue === optionValue ? 'selected' : ''}>${this.escapeHtml(String(optionLabel))}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (propType === 'string') {
+                    // Special handling for conditional plugin "key" field
+                    const isConditionalKey = pluginType === 'conditional' && key === 'condition' && nestedKey === 'key';
+                    const placeholder = nestedPlaceholder || (isConditionalKey ? 'e.g., test_value, request.form_data.email, request.query_params.id' : '');
+                    
+                    html += `<input type="text" 
+                            id="${fieldId}"
+                            value="${this.escapeHtml((nestedValue || '').toString())}"
+                            placeholder="${this.escapeHtml(placeholder)}"
+                            class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isNestedRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                    
+                    // Add additional help text for conditional plugin key field if schema doesn't provide it
+                    if (isConditionalKey) {
+                        if (nestedHelp) {
+                            // Schema provides help text, show it below the input
+                            html += `<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">${this.escapeHtml(nestedHelp)}</p>`;
+                        } else {
+                            // Fallback help text
+                            html += `<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Context variable name. Can be a campaign variable, request data (request.form_data.*), query params (request.query_params.*), or plugin output.</p>`;
+                        }
+                    }
+                } else if (propType === 'number' || propType === 'integer') {
+                    html += `<input type="number" 
+                            id="${fieldId}"
+                            value="${nestedValue || ''}"
+                            step="${propType === 'integer' ? '1' : 'any'}"
+                            class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isNestedRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                } else if (propType === 'boolean') {
+                    html += `<div class="flex items-center space-x-2">`;
+                    html += `<input type="checkbox" 
+                            id="${fieldId}"
+                            ${nestedValue ? 'checked' : ''}
+                            class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">`;
+                    html += `<label for="${fieldId}" class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">${nestedHelp || 'Enable'}</label>`;
+                    html += `</div>`;
+                } else if (propType === 'object' && nestedProp.properties) {
+                    // Recursively render nested objects
+                    html += this.renderObjectFields(key, nestedProp, nestedValue, `${prefix ? prefix + '-' : ''}${nestedKey}`, objectRequired, pluginType);
+                } else if (propType === 'object') {
+                    // Fallback to JSON textarea for objects without properties schema
+                    html += `<textarea 
+                            id="${fieldId}"
+                            class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm${isNestedRequired ? ' border-red-300 dark:border-red-600' : ''}" 
+                            rows="3">${this.escapeHtml(JSON.stringify(nestedValue || {}, null, 2))}</textarea>`;
+                }
+                
+                html += `</div>`;
+            }
+            
+            html += `</div>`;
+            return html;
+        },
+        
+        renderArrayItem(key, index, item, itemSchema) {
+            // Render a single array item
+            let html = `<div class="flex gap-2 items-start p-2 border rounded dark:border-gray-600" data-array-index="${index}">`;
+            html += `<div class="flex-1 space-y-2">`;
+            
+            // If itemSchema has properties, render them as form fields
+            if (itemSchema.properties) {
+                for (const [itemKey, itemProp] of Object.entries(itemSchema.properties)) {
+                    const itemValue = item && typeof item === 'object' ? item[itemKey] : (itemProp.default || '');
+                    html += `<div>`;
+                    html += `<label class="block text-xs font-medium mb-1 dark:text-gray-400">${itemProp.description || itemKey}</label>`;
+                    
+                    if (itemProp.type === 'string' || itemProp.enum) {
+                        if (itemProp.enum) {
+                            html += `<select id="config-${key}-${index}-${itemKey}" 
+                                    class="w-full px-2 py-1 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">`;
+                            itemProp.enum.forEach(opt => {
+                                const optionLabel = typeof opt === 'object' ? (opt.label || opt.value) : opt;
+                                const optionValue = typeof opt === 'object' ? opt.value : opt;
+                                html += `<option value="${this.escapeHtml(String(optionValue))}" ${itemValue === optionValue ? 'selected' : ''}>${this.escapeHtml(String(optionLabel))}</option>`;
+                            });
+                            html += `</select>`;
+                        } else {
+                            html += `<input type="text" 
+                                    id="config-${key}-${index}-${itemKey}"
+                                    value="${(itemValue || '').toString().replace(/"/g, '&quot;')}"
+                                    class="w-full px-2 py-1 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">`;
+                        }
+                    } else if (itemProp.type === 'number' || itemProp.type === 'integer') {
+                        html += `<input type="number" 
+                                id="config-${key}-${index}-${itemKey}"
+                                value="${itemValue || ''}"
+                                class="w-full px-2 py-1 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">`;
+                    } else if (itemProp.type === 'boolean') {
+                        html += `<input type="checkbox" 
+                                id="config-${key}-${index}-${itemKey}"
+                                ${itemValue ? 'checked' : ''}
+                                class="w-4 h-4">`;
+                    } else if (itemProp.type === 'object') {
+                        html += `<textarea 
+                                id="config-${key}-${index}-${itemKey}"
+                                class="w-full px-2 py-1 border rounded text-sm font-mono dark:bg-gray-700 dark:border-gray-600 dark:text-white" 
+                                rows="3">${JSON.stringify(itemValue || {}, null, 2)}</textarea>`;
+                    }
+                    html += `</div>`;
+                }
+            } else {
+                // Simple value input (string array item) - never show "{}" for empty/object
+                const simpleVal = (typeof item === 'object' ? '' : (item || '')).toString();
+                html += `<input type="text" 
+                        id="config-${key}-${index}"
+                        value="${this.escapeHtml(simpleVal)}"
+                        class="w-full px-2 py-1 border rounded text-sm dark:bg-gray-700 dark:border-gray-600 dark:text-white">`;
+            }
+            
+            html += `</div>`;
+                    html += `<button type="button" onclick="window.workflowBuilderInstance.removeArrayItem('${key}', ${index})" 
+                    class="px-2 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700">
+                Remove
+            </button>`;
+            html += `</div>`;
+            return html;
+        },
+        
+        addArrayItem(key, itemSchema) {
+            // Add new array item
+            const container = document.getElementById(`config-${key}-container`);
+            if (!container) return;
+            
+            if (!this.nodeConfig[key]) {
+                this.nodeConfig[key] = [];
+            }
+            const currentArray = this.nodeConfig[key];
+            const newIndex = currentArray.length;
+            const isObjectItem = itemSchema && itemSchema.properties;
+            let newItem = isObjectItem ? {} : '';
+            
+            // Initialize with defaults from schema (object items only)
+            if (isObjectItem) {
+                for (const [itemKey, itemProp] of Object.entries(itemSchema.properties)) {
+                    if (itemProp.default !== undefined) {
+                        newItem[itemKey] = itemProp.default;
+                    }
+                }
+            }
+            
+            currentArray.push(newItem);
+            const itemHtml = this.renderArrayItem(key, newIndex, newItem, itemSchema || {});
+            const addButton = container.querySelector('button.add-array-item-btn');
+            if (addButton) {
+                addButton.insertAdjacentHTML('beforebegin', itemHtml);
+            } else {
+                container.insertAdjacentHTML('beforeend', itemHtml);
+            }
+        },
+        
+        removeArrayItem(key, index) {
+            // Remove array item
+            const container = document.getElementById(`config-${key}-container`);
+            if (!container) return;
+            
+            const itemEl = container.querySelector(`[data-array-index="${index}"]`);
+            if (itemEl) {
+                itemEl.remove();
+                // Update the config array
+                const currentArray = this.nodeConfig[key] || [];
+                currentArray.splice(index, 1);
+                this.nodeConfig[key] = currentArray;
+                // Re-render to update indices
+                this.renderConfigForm(this.plugins.find(p => p.plugin_type === this.selectedNode?.data?.pluginType));
+            }
+        },
+        
+        renderConfigForm(plugin) {
+            const formContainer = document.getElementById('node-config-form');
+            if (!formContainer) return;
+            
+            // Handle loop node configuration
+            if (this.selectedNode?.data?.nodeType === 'loop') {
+                const config = this.selectedNode.data.config || {
+                    array_source: 'targets',
+                    item_key: 'target',
+                    index_key: '_loop_index',
+                    delay: 0
+                };
+                
+                let html = '<div class="space-y-4">';
+                html += '<h3 class="text-lg font-semibold mb-4 dark:text-white">Loop Configuration</h3>';
+                
+                // Array Source
+                html += '<div class="mb-4">';
+                html += '<label class="block text-sm font-medium mb-1 dark:text-gray-300">Array Source</label>';
+                html += `<input type="text" 
+                        id="config-array_source"
+                        value="${this.escapeHtml(config.array_source || 'targets')}"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        placeholder="targets">`;
+                html += '<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Context variable containing array to iterate (e.g., "targets")</p>';
+                html += '</div>';
+                
+                // Item Key
+                html += '<div class="mb-4">';
+                html += '<label class="block text-sm font-medium mb-1 dark:text-gray-300">Item Key</label>';
+                html += `<input type="text" 
+                        id="config-item_key"
+                        value="${this.escapeHtml(config.item_key || 'target')}"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        placeholder="target">`;
+                html += '<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Context variable name for current item in loop</p>';
+                html += '</div>';
+                
+                // Index Key
+                html += '<div class="mb-4">';
+                html += '<label class="block text-sm font-medium mb-1 dark:text-gray-300">Index Key</label>';
+                html += `<input type="text" 
+                        id="config-index_key"
+                        value="${this.escapeHtml(config.index_key || '_loop_index')}"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        placeholder="_loop_index">`;
+                html += '<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Context variable name for current loop index</p>';
+                html += '</div>';
+                
+                // Delay
+                html += '<div class="mb-4">';
+                html += '<label class="block text-sm font-medium mb-1 dark:text-gray-300">Delay (seconds)</label>';
+                html += `<input type="number" 
+                        id="config-delay"
+                        value="${config.delay || 0}"
+                        min="0"
+                        step="0.1"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        placeholder="0">`;
+                html += '<p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Delay between iterations (0 = no delay)</p>';
+                html += '</div>';
+                
+                html += '</div>';
+                formContainer.innerHTML = html;
+                
+                // Attach event listeners
+                ['array_source', 'item_key', 'index_key', 'delay'].forEach(key => {
+                    const input = document.getElementById(`config-${key}`);
+                    if (input) {
+                        input.addEventListener('change', () => {
+                            if (!this.selectedNode.data.config) {
+                                this.selectedNode.data.config = {};
+                            }
+                            if (key === 'delay') {
+                                this.selectedNode.data.config[key] = parseFloat(input.value) || 0;
+                            } else {
+                                this.selectedNode.data.config[key] = input.value;
+                            }
+                            this.updateNodes();
+                        });
+                    }
+                });
+                
+                return;
+            }
+            
+            if (!plugin) {
+                formContainer.innerHTML = '<p class="text-gray-500">No configuration available for this node type.</p>';
+                return;
+            }
+            
+            const schema = plugin.config_schema || {};
+            const properties = schema.properties || {};
+            const requiredFields = schema.required || [];
+            
+            let html = '<div class="space-y-4">';
+            
+            // Check if this is the conditional plugin
+            const isConditionalPlugin = plugin.plugin_type === 'conditional';
+            
+            for (const [key, prop] of Object.entries(properties)) {
+                // Skip legacy true_branch/false_branch fields for conditional plugin
+                if (isConditionalPlugin && (key === 'true_branch' || key === 'false_branch')) {
+                    continue;
+                }
+                
+                const currentValue = this.nodeConfig[key] !== undefined ? this.nodeConfig[key] : (prop.default !== undefined ? prop.default : (prop.type === 'array' ? [] : ''));
+                const isRequired = requiredFields.includes(key);
+                const fieldTitle = prop.title || prop.description || key;
+                const helpText = prop.help || prop.helpText || (prop.title ? prop.description : null);
+                const isUsingDefault = prop.default !== undefined && this.nodeConfig[key] === undefined;
+                
+                html += `<div class="mb-4">`;
+                
+                // Label with title, required indicator, and help icon
+                html += `<label class="block text-sm font-medium mb-1 dark:text-gray-300 flex items-center gap-2">`;
+                html += `<span>${this.escapeHtml(fieldTitle)}</span>`;
+                if (isRequired) {
+                    html += `<span class="text-red-500" title="Required field">*</span>`;
+                }
+                if (helpText) {
+                    html += `<i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors" data-tooltip="${this.escapeHtml(helpText)}"></i>`;
+                }
+                if (isUsingDefault) {
+                    html += `<span class="text-xs text-gray-500 dark:text-gray-400 ml-auto">(default)</span>`;
+                }
+                html += `</label>`;
+                
+                // Input field based on type
+                if (prop.enum) {
+                    // Check enum first - render as dropdown
+                    html += `<select id="config-${key}" class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                    prop.enum.forEach(option => {
+                        const optionLabel = typeof option === 'object' ? (option.label || option.value) : option;
+                        const optionValue = typeof option === 'object' ? option.value : option;
+                        html += `<option value="${this.escapeHtml(String(optionValue))}" ${currentValue === optionValue ? 'selected' : ''}>${this.escapeHtml(String(optionLabel))}</option>`;
+                    });
+                    html += `</select>`;
+                } else if (key === 'template_id' || prop['x-optionsSource'] === 'templates') {
+                    // Dynamic dropdown: options loaded from /api/templates after form render
+                    const selectValue = (currentValue !== undefined && currentValue !== null && currentValue !== '') ? String(currentValue) : '';
+                    html += `<select id="config-${key}" data-options-source="templates" data-value="${this.escapeHtml(selectValue)}" class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                    html += `<option value="">Select a template</option>`;
+                    html += `</select>`;
+                } else if (prop['x-optionsSource'] === 'mms-cards') {
+                    // Dynamic dropdown: options loaded from /api/mms-card-configs after form render
+                    const selectValue = (currentValue !== undefined && currentValue !== null && currentValue !== '') ? String(currentValue) : '';
+                    html += `<select id="config-${key}" data-options-source="mms-cards" data-value="${this.escapeHtml(selectValue)}" class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500${isRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                    html += `<option value="">None (no MMS card)</option>`;
+                    html += `</select>`;
+                } else if (prop.type === 'string') {
+                    // Check for format
+                    let inputType = 'text';
+                    let inputClass = 'w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white';
+                    
+                    if (prop.format === 'email') {
+                        inputType = 'email';
+                    } else if (prop.format === 'uri' || prop.format === 'url') {
+                        inputType = 'url';
+                    } else if (prop.format === 'textarea') {
+                        html += `<textarea 
+                                id="config-${key}"
+                                class="${inputClass}"
+                                rows="4">${this.escapeHtml((currentValue || '').toString())}</textarea>`;
+                        html += `</div>`;
+                        continue;
+                    }
+                    
+                    html += `<input type="${inputType}"
+                            id="config-${key}"
+                            value="${this.escapeHtml((currentValue || '').toString())}"
+                            class="${inputClass}${isRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                } else if (prop.type === 'integer' || prop.type === 'number') {
+                    html += `<input type="number" 
+                            id="config-${key}"
+                            value="${currentValue || ''}"
+                            step="${prop.type === 'integer' ? '1' : 'any'}"
+                            class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white${isRequired ? ' border-red-300 dark:border-red-600' : ''}">`;
+                } else if (prop.type === 'boolean') {
+                    html += `<div class="flex items-center space-x-2">`;
+                    html += `<input type="checkbox" 
+                            id="config-${key}"
+                            ${currentValue ? 'checked' : ''}
+                            class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600">`;
+                    html += `<label for="config-${key}" class="text-sm text-gray-700 dark:text-gray-300 cursor-pointer">${helpText || 'Enable'}</label>`;
+                    html += `</div>`;
+                } else if (prop.type === 'array') {
+                    // Handle array type - create dynamic array editor
+                    const arrayValue = Array.isArray(currentValue) ? currentValue : [];
+                    const itemSchema = prop.items || {};
+                    
+                    html += `<div id="config-${key}-container" class="space-y-2">`;
+                    arrayValue.forEach((item, index) => {
+                        html += this.renderArrayItem(key, index, item, itemSchema);
+                    });
+                    html += `<button type="button" class="add-array-item-btn mt-2 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors" data-array-key="${this.escapeHtml(key)}">
+                        <i class="fas fa-plus mr-1"></i> Add Item
+                    </button>`;
+                    html += `</div>`;
+                } else if (prop.type === 'object') {
+                    // Check if object has properties schema - if so, render nested form fields
+                    if (prop.properties) {
+                        html += this.renderObjectFields(key, prop, currentValue, '', requiredFields, plugin.plugin_type);
+                    } else {
+                        // Fallback to JSON textarea for objects without properties schema
+                        html += `<textarea 
+                                id="config-${key}"
+                                class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white font-mono text-sm${isRequired ? ' border-red-300 dark:border-red-600' : ''}" 
+                                rows="5">${this.escapeHtml(JSON.stringify(currentValue || {}, null, 2))}</textarea>`;
+                    }
+                }
+                
+                html += `</div>`;
+            }
+            
+            html += '</div>';
+            formContainer.innerHTML = html;
+            this.bindArrayItemButtons(formContainer);
+            this.populateTemplateSelects();
+            this.populateMmsCardSelects();
+        },
+
+        bindArrayItemButtons(formContainer) {
+            const self = this;
+            formContainer.querySelectorAll('.add-array-item-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const key = this.getAttribute('data-array-key');
+                    if (!key) return;
+                    const plugin = self.plugins.find(p => p.plugin_type === self.selectedNode?.data?.pluginType);
+                    const itemSchema = plugin?.config_schema?.properties?.[key]?.items || {};
+                    self.addArrayItem(key, itemSchema);
+                });
+            });
+        },
+
+        async populateTemplateSelects() {
+            const selects = document.querySelectorAll('#node-config-form select[data-options-source="templates"]');
+            if (selects.length === 0) return;
+            try {
+                const response = await fetch('/api/templates?per_page=500');
+                if (!response.ok) return;
+                const data = await response.json();
+                const templates = data.templates || [];
+                selects.forEach(select => {
+                    const savedValue = select.getAttribute('data-value') || '';
+                    templates.forEach(t => {
+                        const opt = document.createElement('option');
+                        opt.value = String(t.id);
+                        opt.textContent = t.name || `Template ${t.id}`;
+                        if (String(t.id) === savedValue) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                    if (savedValue && !select.value) select.value = savedValue;
+                });
+            } catch (err) {
+                console.error('Failed to load templates for dropdown:', err);
+            }
+        },
+
+        async populateMmsCardSelects() {
+            const selects = document.querySelectorAll('#node-config-form select[data-options-source="mms-cards"]');
+            if (selects.length === 0) return;
+            try {
+                const response = await fetch('/api/mms-card-configs');
+                if (!response.ok) return;
+                const data = await response.json();
+                const configs = data.configs || [];
+                selects.forEach(select => {
+                    const savedValue = select.getAttribute('data-value') || '';
+                    configs.forEach(c => {
+                        const opt = document.createElement('option');
+                        opt.value = c.id || '';
+                        opt.textContent = c.company_name ? `${c.id} (${c.company_name})` : c.id;
+                        if (opt.value === savedValue) opt.selected = true;
+                        select.appendChild(opt);
+                    });
+                    if (savedValue && !select.value) select.value = savedValue;
+                });
+            } catch (err) {
+                console.error('Failed to load MMS card configs for dropdown:', err);
+            }
+        },
+        
+        escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        },
+        
+        saveNodeConfig() {
+            if (!this.selectedNode) return;
+            
+            // Handle loop node configuration
+            if (this.selectedNode.data?.nodeType === 'loop') {
+                const formContainer = document.getElementById('node-config-form');
+                const config = {
+                    array_source: document.getElementById('config-array_source')?.value || 'targets',
+                    item_key: document.getElementById('config-item_key')?.value || 'target',
+                    index_key: document.getElementById('config-index_key')?.value || '_loop_index',
+                    delay: parseFloat(document.getElementById('config-delay')?.value || '0') || 0
+                };
+                
+                if (!this.selectedNode.data.config) {
+                    this.selectedNode.data.config = {};
+                }
+                Object.assign(this.selectedNode.data.config, config);
+                
+                this.updateNodes();
+                this.showConfigModal = false;
+                showToast('Loop node configuration saved', 'success');
+                return;
+            }
+            
+            // Collect form values
+            const formContainer = document.getElementById('node-config-form');
+            const newConfig = {};
+            
+            // Get all config keys from the schema
+            const plugin = this.plugins.find(p => p.plugin_type === this.selectedNode.data?.pluginType);
+            const schema = plugin?.config_schema || {};
+            const properties = schema.properties || {};
+            
+            for (const [key, prop] of Object.entries(properties)) {
+                if (prop.type === 'array') {
+                    // Handle array type - collect all array items
+                    const container = document.getElementById(`config-${key}-container`);
+                    if (container) {
+                        const arrayItems = [];
+                        const itemElements = container.querySelectorAll(`[data-array-index]`);
+                        
+                        itemElements.forEach(itemEl => {
+                            const index = parseInt(itemEl.getAttribute('data-array-index'));
+                            const itemSchema = prop.items || {};
+                            
+                            if (itemSchema.properties) {
+                                // Object item
+                                const item = {};
+                                for (const [itemKey] of Object.entries(itemSchema.properties)) {
+                                    const itemInput = itemEl.querySelector(`#config-${key}-${index}-${itemKey}`);
+                                    if (itemInput) {
+                                        if (itemInput.type === 'checkbox') {
+                                            item[itemKey] = itemInput.checked;
+                                        } else if (itemInput.type === 'number') {
+                                            item[itemKey] = itemInput.value ? Number(itemInput.value) : undefined;
+                                        } else if (itemInput.tagName === 'TEXTAREA' && itemInput.value.trim()) {
+                                            try {
+                                                item[itemKey] = JSON.parse(itemInput.value);
+                                            } catch {
+                                                item[itemKey] = itemInput.value;
+                                            }
+                                        } else {
+                                            item[itemKey] = itemInput.value || undefined;
+                                        }
+                                    }
+                                }
+                                arrayItems.push(item);
+                            } else {
+                                // Simple value item
+                                const itemInput = itemEl.querySelector(`#config-${key}-${index}`);
+                                if (itemInput) {
+                                    if (itemInput.tagName === 'TEXTAREA' && itemInput.value.trim()) {
+                                        try {
+                                            arrayItems.push(JSON.parse(itemInput.value));
+                                        } catch {
+                                            arrayItems.push(itemInput.value);
+                                        }
+                                    } else {
+                                        arrayItems.push(itemInput.value);
+                                    }
+                                }
+                            }
+                        });
+                        
+                        newConfig[key] = arrayItems;
+                    } else {
+                        newConfig[key] = this.nodeConfig[key] || [];
+                    }
+                } else if (prop.type === 'object' && prop.properties) {
+                    // Handle nested object - collect all nested fields
+                    const nestedObject = {};
+                    for (const [nestedKey] of Object.entries(prop.properties)) {
+                        const fieldId = `config-${key}-${nestedKey}`;
+                        const input = formContainer.querySelector(`#${fieldId}`);
+                        if (input) {
+                            if (input.type === 'checkbox') {
+                                nestedObject[nestedKey] = input.checked;
+                            } else if (input.type === 'number') {
+                                nestedObject[nestedKey] = input.value ? Number(input.value) : undefined;
+                            } else if (input.tagName === 'TEXTAREA' && input.value.trim()) {
+                                try {
+                                    nestedObject[nestedKey] = JSON.parse(input.value);
+                                } catch {
+                                    nestedObject[nestedKey] = input.value;
+                                }
+                            } else {
+                                const value = input.value || undefined;
+                                // Try to parse as number or boolean if it looks like one
+                                if (value !== undefined && value !== '') {
+                                    if (value === 'true') nestedObject[nestedKey] = true;
+                                    else if (value === 'false') nestedObject[nestedKey] = false;
+                                    else if (!isNaN(value) && value.trim() !== '') {
+                                        nestedObject[nestedKey] = Number(value);
+                                    } else {
+                                        nestedObject[nestedKey] = value;
+                                    }
+                                } else {
+                                    nestedObject[nestedKey] = undefined;
+                                }
+                            }
+                        }
+                    }
+                    // Only add if object has at least one defined value
+                    if (Object.keys(nestedObject).some(k => nestedObject[k] !== undefined)) {
+                        newConfig[key] = nestedObject;
+                    }
+                } else {
+                    // Handle non-array, non-nested-object types
+                    const input = formContainer.querySelector(`#config-${key}`);
+                    if (input) {
+                        if (input.type === 'checkbox') {
+                            newConfig[key] = input.checked;
+                        } else if (input.tagName === 'SELECT' && (prop.type === 'integer' || prop.type === 'number')) {
+                            newConfig[key] = input.value ? Number(input.value) : undefined;
+                        } else if (input.type === 'number') {
+                            newConfig[key] = input.value ? Number(input.value) : undefined;
+                        } else if (input.tagName === 'TEXTAREA' && input.value.trim()) {
+                            try {
+                                newConfig[key] = JSON.parse(input.value);
+                            } catch {
+                                newConfig[key] = input.value;
+                            }
+                        } else {
+                            newConfig[key] = input.value || undefined;
+                        }
+                    }
+                }
+            }
+            
+            // Update node data with config
+            const nodeIndex = this.nodes.findIndex(n => n.id === this.selectedNode.id);
+            if (nodeIndex !== -1) {
+                this.nodes[nodeIndex].data = {
+                    ...this.nodes[nodeIndex].data,
+                    config: newConfig
+                };
+            }
+            
+            this.showConfigModal = false;
+        },
+        
+        async saveWorkflow() {
+            if (!this.workflowName.trim()) {
+                showToast('Workflow name is required', 'error');
+                return;
+            }
+            
+            // Sync edges from jsPlumb before saving to catch any manually made connections
+            // This ensures we save all connections that exist in the UI, even if events didn't fire
+            // Use the same syncEdgesFromJsPlumb logic which properly extracts endpoint UUIDs
+            if (this.jsPlumbInstance && this.jsPlumbInstance.getAllConnections) {
+                try {
+                    // Call the existing syncEdgesFromJsPlumb function which has all the correct logic
+                    // But we need to access it - it's defined in setupConnectionListeners
+                    // So we'll duplicate the logic here but use the same endpoint UUID extraction
+                    const extractNodeId = this.extractNodeIdFromEndpoint;
+                    if (!extractNodeId) {
+                        extractNodeId = (endpointUuid) => {
+                            if (!endpointUuid) return null;
+                            const pathMatch = endpointUuid.match(/^(.+?)-source-(true|false)$/);
+                            if (pathMatch) {
+                                return { nodeId: pathMatch[1], path: pathMatch[2] };
+                            }
+                            const match = endpointUuid.match(/^(.+?)-(?:source|target)$/);
+                            return match ? { nodeId: match[1], path: null } : { nodeId: endpointUuid, path: null };
+                        };
+                    }
+                    
+                    const allConnections = this.jsPlumbInstance.getAllConnections();
+                    const edgesArray = [];
+                    
+                    allConnections.forEach(conn => {
+                        // Use the SAME endpoint UUID extraction logic as syncEdgesFromJsPlumb
+                        let sourceEndpointUuid = null;
+                        let targetEndpointUuid = null;
+                        
+                        try {
+                            // Method 1: Get endpoint from endpoints array and query jsPlumb for full object
+                            if (conn.endpoints && conn.endpoints.length >= 2) {
+                                const sourceEndpointId = conn.endpoints[0]?.id;
+                                const targetEndpointId = conn.endpoints[1]?.id;
+                                
+                                if (sourceEndpointId) {
+                                    const sourceEl = typeof conn.source === 'string' ? document.getElementById(conn.source) : conn.source;
+                                    if (sourceEl) {
+                                        const node = this.nodes.find(n => n.id === conn.sourceId);
+                                        const pluginType = node?.data?.pluginType;
+                                        const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                                        const hasBranching = plugin?.branch_context_key;
+                                        
+                                        if (hasBranching) {
+                                            const trueEndpointUuid = `${conn.sourceId}-source-true`;
+                                            const falseEndpointUuid = `${conn.sourceId}-source-false`;
+                                            const trueEndpoint = this.jsPlumbInstance.getEndpoint(trueEndpointUuid);
+                                            const falseEndpoint = this.jsPlumbInstance.getEndpoint(falseEndpointUuid);
+                                            
+                                            // Use the same endpoint matching logic as syncEdgesFromJsPlumb
+                                            // Get the connection's actual sourceEndpoint object
+                                            const connSourceEndpoint = conn.sourceEndpoint || (conn.endpoints && conn.endpoints[0]);
+                                            
+                                            if (trueEndpoint && connSourceEndpoint) {
+                                                // Direct object comparison - if they're the same object, it's a match
+                                                if (connSourceEndpoint === trueEndpoint) {
+                                                    sourceEndpointUuid = trueEndpointUuid;
+                                                } else {
+                                                    // Also check IDs as fallback
+                                                    const connSourceEndpointId = connSourceEndpoint?.id || connSourceEndpoint?.uuid || null;
+                                                    const trueEndpointId = trueEndpoint.id || trueEndpoint.uuid;
+                                                    if (connSourceEndpointId === trueEndpointId || connSourceEndpointId === trueEndpointUuid) {
+                                                        sourceEndpointUuid = trueEndpointUuid;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            if (!sourceEndpointUuid && falseEndpoint && connSourceEndpoint) {
+                                                // Direct object comparison - if they're the same object, it's a match
+                                                if (connSourceEndpoint === falseEndpoint) {
+                                                    sourceEndpointUuid = falseEndpointUuid;
+                                                } else {
+                                                    // Also check IDs as fallback
+                                                    const connSourceEndpointId = connSourceEndpoint?.id || connSourceEndpoint?.uuid || null;
+                                                    const falseEndpointId = falseEndpoint.id || falseEndpoint.uuid;
+                                                    if (connSourceEndpointId === falseEndpointId || connSourceEndpointId === falseEndpointUuid) {
+                                                        sourceEndpointUuid = falseEndpointUuid;
+                                                    }
+                                                }
+                                            }
+                                            
+                                            // If still no match, try querying jsPlumb as fallback
+                                            if (!sourceEndpointUuid) {
+                                                if (trueEndpoint) {
+                                                    const trueConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: trueEndpoint});
+                                                    if (trueConnections.some(c => c.id === conn.id)) {
+                                                        sourceEndpointUuid = trueEndpointUuid;
+                                                    }
+                                                }
+                                                if (!sourceEndpointUuid && falseEndpoint) {
+                                                    const falseConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: falseEndpoint});
+                                                    if (falseConnections.some(c => c.id === conn.id)) {
+                                                        sourceEndpointUuid = falseEndpointUuid;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (!sourceEndpointUuid) {
+                                            const endpoints = this.jsPlumbInstance.getEndpoints(sourceEl);
+                                            const matchingEndpoint = endpoints.find(ep => {
+                                                const epConnections = this.jsPlumbInstance.getConnections({sourceEndpoint: ep});
+                                                // CRITICAL: Only match by connection ID, not by sourceId/targetId
+                                                return epConnections.some(c => c.id === conn.id);
+                                            });
+                                            if (matchingEndpoint) {
+                                                const expectedUuids = [`${conn.sourceId}-source`, `${conn.sourceId}-source-true`, `${conn.sourceId}-source-false`];
+                                                for (const expectedUuid of expectedUuids) {
+                                                    const ep = this.jsPlumbInstance.getEndpoint(expectedUuid);
+                                                    if (ep && ep === matchingEndpoint) {
+                                                        sourceEndpointUuid = expectedUuid;
+                                                        break;
+                                                    }
+                                                }
+                                                if (!sourceEndpointUuid) {
+                                                    sourceEndpointUuid = matchingEndpoint.uuid || matchingEndpoint.id;
+                                                }
+                                            }
+                                        }
+                                        
+                                        if (!sourceEndpointUuid || sourceEndpointUuid.startsWith('ep_')) {
+                                            sourceEndpointUuid = conn.sourceId;
+                                        }
+                                    } else {
+                                        sourceEndpointUuid = conn.sourceId;
+                                    }
+                                }
+                                
+                                if (targetEndpointId) {
+                                    const targetEndpoint = this.jsPlumbInstance.getEndpoint(targetEndpointId);
+                                    if (targetEndpoint) {
+                                        targetEndpointUuid = targetEndpoint.uuid || targetEndpoint.id || targetEndpointId;
+                                    }
+                                }
+                            }
+                            
+                            // Fallback
+                            if (!sourceEndpointUuid) {
+                                sourceEndpointUuid = conn.sourceId;
+                            }
+                            if (!targetEndpointUuid) {
+                                targetEndpointUuid = conn.targetId;
+                            }
+                        } catch (e) {
+                            sourceEndpointUuid = conn.sourceId;
+                            targetEndpointUuid = conn.targetId;
+                        }
+                        
+                        const sourceInfo = extractNodeId(sourceEndpointUuid);
+                        const targetInfo = extractNodeId(targetEndpointUuid);
+                        const sourceId = sourceInfo?.nodeId || sourceInfo;
+                        const targetId = targetInfo?.nodeId || targetInfo;
+                        const path = sourceInfo?.path || null;
+                        // Skip connections where target is not a workflow node (e.g. jsPlumb_3_70 from in-progress drag)
+                        const validNodeIds = new Set(this.nodes.map(n => n.id));
+                        if (sourceId && targetId && validNodeIds.has(sourceId) && validNodeIds.has(targetId)) {
+                            const edge = path ? { source: sourceId, target: targetId, path: path } : { source: sourceId, target: targetId };
+                            edgesArray.push(edge);
+                        }
+                    });
+                    
+                    // Merge with existing edges - preserve paths from existing edges
+                    const existingEdges = Array.isArray(this.edges) ? [...this.edges] : [];
+                    const mergedEdges = [];
+                    
+                    // Keep ALL existing edges with paths
+                    existingEdges.forEach(e => {
+                        if (e.path) {
+                            mergedEdges.push(e);
+                        }
+                    });
+                    
+                    // Add edges from jsPlumb, but ONLY if they don't conflict with existing edges with paths
+                    edgesArray.forEach(e => {
+                        const baseKey = `${e.source}->${e.target}`;
+                        const existingWithPath = existingEdges.find(ex => ex.source === e.source && ex.target === e.target && ex.path);
+                        
+                        if (existingWithPath) {
+                            // We already have an edge with a path - don't overwrite it with a pathless edge
+                            if (e.path && !mergedEdges.some(m => m.source === e.source && m.target === e.target && m.path === e.path)) {
+                                // New edge has a different path - add it
+                                mergedEdges.push(e);
+                            }
+                            // Otherwise, skip this edge (keep the existing one with path)
+                        } else {
+                            // No existing edge with path - add this edge
+                            if (!mergedEdges.some(m => m.source === e.source && m.target === e.target && (!e.path || m.path === e.path))) {
+                                mergedEdges.push(e);
+                            }
+                        }
+                    });
+                    
+                    this.edges = mergedEdges;
+                } catch (e) {
+                    console.error('Error syncing edges before save:', e);
+                }
+            }
+            
+            // Filter out any invalid edges (e.g. jsPlumb internal IDs from in-progress drags)
+            const nodeIds = new Set(this.nodes.map(n => n.id));
+            this.edges = this.edges.filter(e => 
+                e && nodeIds.has(e.source) && nodeIds.has(e.target)
+            );
+            
+            // Get current node positions from DOM with fallback to stored positions
+            const workflowNodes = this.nodes.map(node => {
+                let positionX = node.position?.x || 0;
+                let positionY = node.position?.y || 0;
+                
+                // Try to get position from DOM - positions are stored in canvas coordinates
+                const nodeEl = document.getElementById(node.id);
+                if (nodeEl) {
+                    // Get the actual CSS left/top values which are in canvas coordinates
+                    const computedStyle = window.getComputedStyle(nodeEl);
+                    positionX = parseFloat(computedStyle.left) || 0;
+                    positionY = parseFloat(computedStyle.top) || 0;
+                }
+                
+                // Extract connections for this node from edges array
+                // Convert Alpine.js reactive array to regular array to ensure we get all edges
+                const edgesArray = Array.isArray(this.edges) ? [...this.edges] : [];
+                const nodeEdges = edgesArray.filter(e => e && e.source === node.id);
+                
+                // Check if this node supports branching
+                const pluginType = node.data?.pluginType;
+                const plugin = pluginType ? this.plugins.find(p => p.plugin_type === pluginType) : null;
+                const hasBranching = plugin?.branch_context_key;
+                
+                let nodeConnections;
+                // For branching nodes, we MUST use path-based format even if edges don't have paths yet
+                // This ensures connections are saved in the correct format
+                if (hasBranching) {
+                    // Boolean path format: [{"path": "true", "target": "node-id"}, ...]
+                    // If edges have paths, use them; otherwise, we need to infer or use a default
+                    // But for now, only save edges that have paths to avoid data loss
+                    const edgesWithPaths = nodeEdges.filter(e => e.path && e.target);
+                    // Deduplicate by target: each target can only be on ONE path (first wins)
+                    const uniqueEdges = [];
+                    const seenTargets = new Set();
+                    edgesWithPaths.forEach(e => {
+                        if (!seenTargets.has(e.target)) {
+                            seenTargets.add(e.target);
+                            uniqueEdges.push(e);
+                        } else {
+                            console.warn(`Duplicate target ${e.target} with path ${e.path} skipped for node ${node.id}`);
+                        }
+                    });
+                    if (uniqueEdges.length > 0) {
+                        nodeConnections = uniqueEdges.map(e => ({ path: e.path, target: e.target }));
+                    } else {
+                        // No paths available - this shouldn't happen for new connections
+                        // But we'll save as simple format to avoid breaking existing workflows
+                        console.warn(`Branching node ${node.id} has connections without paths! Saving as simple format.`);
+                        nodeConnections = nodeEdges
+                            .map(e => e.target)
+                            .filter(target => target);
+                    }
+                } else {
+                    // Simple array format for backward compatibility
+                    nodeConnections = nodeEdges
+                        .map(e => e.target)
+                        .filter(target => target); // Remove any null/undefined targets
+                }
+                
+                return {
+                    node_id: node.id,
+                    node_type: node.data?.nodeType || (node.id === 'start' ? 'start' : 'plugin'),
+                    plugin_type: node.data?.pluginType || null,
+                    position_x: positionX,
+                    position_y: positionY,
+                    config: node.data?.config || {},
+                    connections: nodeConnections
+                };
+            });
+            
+            const workflowData = {
+                name: this.workflowName,
+                description: this.workflowDescription,
+                workflow_type: this.workflowType,
+                workflow_data: {
+                    nodes: workflowNodes
+                },
+                is_public: true
+            };
+            
+            try {
+                const url = this.workflowId ? `/api/workflows/${this.workflowId}` : '/api/workflows';
+                const method = this.workflowId ? 'PUT' : 'POST';
+                
+                // Get CSRF token from meta tag
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                
+                // Add CSRF token to headers if available
+                if (csrfToken) {
+                    headers['X-CSRFToken'] = csrfToken;
+                }
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: headers,
+                    body: JSON.stringify(workflowData)
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    const wasNew = !this.workflowId;
+                    if (wasNew) {
+                        this.workflowId = result.id;
+                    }
+                    showToast('Workflow saved successfully!', 'success');
+                    // No SendingWorkflow creation or redirect to /sending-workflows; stay on builder or user can go to /workflows
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to save workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error saving workflow:', error);
+                showToast('Error saving workflow', 'error');
+            }
+        },
+        
+        // Zoom and Pan Functions
+        zoomIn() {
+            this.canvasZoom = Math.min(this.canvasZoom + 0.1, 2.0);
+            this.updateCanvasTransform();
+        },
+        
+        zoomOut() {
+            this.canvasZoom = Math.max(this.canvasZoom - 0.1, 0.25);
+            this.updateCanvasTransform();
+        },
+        
+        resetZoom() {
+            this.canvasZoom = 1.0;
+            this.updateCanvasTransform();
+        },
+        
+        zoomToFit() {
+            if (this.nodes.length === 0) {
+                this.resetZoom();
+                this.resetPan();
+                return;
+            }
+            
+            // Calculate bounding box of all nodes
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            this.nodes.forEach(node => {
+                const x = node.position?.x || 0;
+                const y = node.position?.y || 0;
+                minX = Math.min(minX, x);
+                minY = Math.min(minY, y);
+                maxX = Math.max(maxX, x + 150); // Approximate node width
+                maxY = Math.max(maxY, y + 100); // Approximate node height
+            });
+            
+            const viewport = document.getElementById('canvas-viewport');
+            if (!viewport) return;
+            
+            const viewportWidth = viewport.clientWidth;
+            const viewportHeight = viewport.clientHeight;
+            
+            const contentWidth = maxX - minX + 200; // Add padding
+            const contentHeight = maxY - minY + 200; // Add padding
+            
+            // Calculate zoom to fit
+            const zoomX = viewportWidth / contentWidth;
+            const zoomY = viewportHeight / contentHeight;
+            const newZoom = Math.min(zoomX, zoomY, 2.0) * 0.9; // 90% to add some padding
+            
+            this.canvasZoom = Math.max(newZoom, 0.25);
+            
+            // Center the content
+            const centerX = (minX + maxX) / 2;
+            const centerY = (minY + maxY) / 2;
+            
+            this.canvasPanX = (viewportWidth / 2) / this.canvasZoom - centerX;
+            this.canvasPanY = (viewportHeight / 2) / this.canvasZoom - centerY;
+            
+            this.updateCanvasTransform();
+        },
+        
+        startPan(event) {
+            // Don't pan if clicking on a node or if dragging a node
+            if (this.isDragging) return;
+            
+            const target = event.target;
+            const isNode = target.classList.contains('workflow-node') || target.closest('.workflow-node');
+            if (isNode) return;
+            
+            // Only pan if clicking on background and spacebar is pressed or middle mouse button
+            const isBackground = target.id === 'canvas-viewport' || 
+                                target.id === 'workflow-canvas-wrapper' || 
+                                target.id === 'workflow-canvas';
+            
+            if (isBackground) {
+                const spaceKeyPressed = window.spaceKeyPressed || false;
+                if (event.button === 1 || (event.button === 0 && spaceKeyPressed)) {
+                    // Middle mouse button or spacebar + left click
+                    event.preventDefault();
+                    this.isPanning = true;
+                    this.panStartX = event.clientX;
+                    this.panStartY = event.clientY;
+                    this.panStartOffsetX = this.canvasPanX;
+                    this.panStartOffsetY = this.canvasPanY;
+                    
+                    const viewport = document.getElementById('canvas-viewport');
+                    if (viewport) {
+                        viewport.classList.add('panning');
+                    }
+                }
+            }
+        },
+        
+        doPan(event) {
+            if (!this.isPanning) return;
+            
+            event.preventDefault();
+            const deltaX = event.clientX - this.panStartX;
+            const deltaY = event.clientY - this.panStartY;
+            
+            this.canvasPanX = this.panStartOffsetX + deltaX;
+            this.canvasPanY = this.panStartOffsetY + deltaY;
+            
+            this.updateCanvasTransform();
+        },
+        
+        endPan() {
+            if (this.isPanning) {
+                this.isPanning = false;
+                const viewport = document.getElementById('canvas-viewport');
+                if (viewport) {
+                    viewport.classList.remove('panning');
+                }
+            }
+        },
+        
+        resetPan() {
+            this.canvasPanX = 0;
+            this.canvasPanY = 0;
+            this.updateCanvasTransform();
+        },
+        
+        handleWheelZoom(event) {
+            // Only zoom with Ctrl/Cmd + wheel, and not when over a node
+            if (event.ctrlKey || event.metaKey) {
+                const target = event.target;
+                const isNode = target.classList.contains('workflow-node') || target.closest('.workflow-node');
+                if (isNode) {
+                    // Allow default behavior on nodes (scrolling)
+                    return;
+                }
+                
+                event.preventDefault();
+                const delta = event.deltaY > 0 ? -0.1 : 0.1;
+                this.canvasZoom = Math.max(0.25, Math.min(2.0, this.canvasZoom + delta));
+                this.updateCanvasTransform();
+            }
+        },
+        
+        handleKeyPan(event) {
+            // Arrow keys for panning
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                this.canvasPanY += 20;
+                this.updateCanvasTransform();
+            } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                this.canvasPanY -= 20;
+                this.updateCanvasTransform();
+            } else if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                this.canvasPanX += 20;
+                this.updateCanvasTransform();
+            } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                this.canvasPanX -= 20;
+                this.updateCanvasTransform();
+            } else if ((event.ctrlKey || event.metaKey) && event.key === '0') {
+                // Ctrl/Cmd + 0: Reset zoom
+                event.preventDefault();
+                this.resetZoom();
+            } else if ((event.ctrlKey || event.metaKey) && (event.key === '+' || event.key === '=')) {
+                // Ctrl/Cmd + +: Zoom in
+                event.preventDefault();
+                this.zoomIn();
+            } else if ((event.ctrlKey || event.metaKey) && event.key === '-') {
+                // Ctrl/Cmd + -: Zoom out
+                event.preventDefault();
+                this.zoomOut();
+            }
+        },
+        
+        updateCanvasTransform() {
+            // Ensure values are initialized
+            if (this.canvasZoom === null || this.canvasZoom === undefined) this.canvasZoom = 1.0;
+            if (this.canvasPanX === null || this.canvasPanX === undefined) this.canvasPanX = 0;
+            if (this.canvasPanY === null || this.canvasPanY === undefined) this.canvasPanY = 0;
+            
+            // Update the transform manually (Alpine.js binding may not be reactive enough)
+            const wrapper = document.getElementById('workflow-canvas-wrapper');
+            if (wrapper) {
+                const transform = `translate(${this.canvasPanX}px, ${this.canvasPanY}px) scale(${this.canvasZoom})`;
+                wrapper.style.transform = transform;
+                wrapper.style.transformOrigin = '0 0';
+            }
+            if (this.jsPlumbInstance) {
+                // Small delay to ensure DOM is updated
+                setTimeout(() => {
+                    this.jsPlumbInstance.repaintEverything();
+                }, 10);
+            }
+        },
+        
+        async testWorkflow() {
+            if (!this.workflowId) {
+                showToast('Please save the workflow first', 'warning');
+                return;
+            }
+            
+            try {
+                // Get CSRF token from meta tag
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                
+                const headers = {
+                    'Content-Type': 'application/json'
+                };
+                
+                // Add CSRF token to headers if available
+                if (csrfToken) {
+                    headers['X-CSRFToken'] = csrfToken;
+                }
+                
+                const testUrl = this.workflowType === 'sending'
+                    ? `/api/sending-workflows/${this.workflowId}/execute`
+                    : `/api/workflows/${this.workflowId}/test`;
+
+                const response = await fetch(testUrl, {
+                    method: 'POST',
+                    headers: headers,
+                    body: JSON.stringify({
+                        context: { test: true }
+                    })
+                });
+                
+                const result = await response.json();
+                showToast('Test completed. Check console for results.', 'info');
+            } catch (error) {
+                console.error('Error testing workflow:', error);
+                showToast('Error testing workflow', 'error');
+            }
+        },
+        
+        validateWorkflow() {
+            const errors = [];
+            
+            if (this.nodes.length === 0) {
+                errors.push('Workflow must have at least one node');
+            }
+            
+            const startNodes = this.nodes.filter(n => n.id === 'start' || n.data?.nodeType === 'start');
+            if (startNodes.length === 0) {
+                errors.push('Workflow must have a start node');
+            }
+            
+            // Validate node IDs and connections
+            const nodeIds = new Set(this.nodes.map(n => n.id));
+            
+            // Validate connections
+            this.edges.forEach(edge => {
+                if (!nodeIds.has(edge.source)) {
+                    errors.push(`Connection source node "${edge.source}" does not exist`);
+                }
+                if (!nodeIds.has(edge.target)) {
+                    errors.push(`Connection target node "${edge.target}" does not exist`);
+                }
+            });
+            
+            // Validate plugin nodes have required config
+            this.nodes.forEach(node => {
+                if (node.data?.nodeType === 'plugin' && node.data?.pluginType) {
+                    const plugin = this.plugins.find(p => p.plugin_type === node.data.pluginType);
+                    if (plugin) {
+                        const schema = plugin.config_schema || {};
+                        const required = schema.required || [];
+                        const config = node.data.config || {};
+                        required.forEach(key => {
+                            if (config[key] === undefined || config[key] === null || config[key] === '') {
+                                errors.push(`Node "${node.data.label || node.id}" is missing required config: ${key}`);
+                            }
+                        });
+                    } else {
+                        errors.push(`Node "${node.data.label || node.id}" references unknown plugin: ${node.data.pluginType}`);
+                    }
+                }
+            });
+            
+            if (errors.length > 0) {
+                showToast('Validation errors: ' + errors.join(', '), 'error');
+            } else {
+                showToast('Workflow is valid!', 'success');
+            }
+        },
+        
+        async deleteSelectedNode() {
+            if (!this.selectedNode) return;
+            if (this.selectedNode.id === 'start') {
+                showToast('Cannot delete the start node', 'warning');
+                return;
+            }
+            
+            const confirmed = await showConfirm(
+                `Delete node "${this.selectedNode.data?.label || this.selectedNode.id}"?`,
+                'Delete Node'
+            );
+            if (confirmed) {
+                // Get the actual node ID from the selected node (ensure we're deleting the right one)
+                const nodeIdToDelete = this.selectedNode.id;
+                
+                // Remove from data - use nodeIdToDelete to ensure we delete the correct node
+                const beforeCount = this.nodes.length;
+                this.nodes = this.nodes.filter(n => n.id !== nodeIdToDelete);
+                // Remove connections
+                this.edges = this.edges.filter(e => 
+                    e.source !== nodeIdToDelete && e.target !== nodeIdToDelete
+                );
+                
+                // Remove from DOM immediately to prevent duplicates
+                const container = document.getElementById('workflow-canvas');
+                if (container && this.jsPlumbInstance) {
+                    // Remove all nodes with this ID (in case of duplicates)
+                    const domNodes = container.querySelectorAll(`#${nodeIdToDelete}`);
+                    domNodes.forEach(domNode => {
+                        // Remove endpoints first
+                        try {
+                            this.jsPlumbInstance.deleteEndpoint(`${nodeIdToDelete}-source`);
+                            this.jsPlumbInstance.deleteEndpoint(`${nodeIdToDelete}-target`);
+                        } catch (e) {
+                            // Ignore if endpoints don't exist
+                        }
+                        domNode.remove();
+                    });
+                    // Remove from dragging tracking
+                    this.nodesSetupForDragging.delete(nodeIdToDelete);
+                }
+                
+                this.selectedNode = null;
+                // Don't call updateNodes() here since we've already removed from DOM
+                // Just repaint connections
+                if (this.jsPlumbInstance) {
+                    this.jsPlumbInstance.repaintEverything();
+                }
+            }
+        }
+    };
+    
+    // Store instance globally for array item handlers
+    workflowBuilderInstance = instance;
+    
+    return instance;
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Server Error{% endblock %}
+
+{% block error_title %}Server Error{% endblock %}
+{% block error_message %}We're experiencing technical difficulties. Please try again later.{% endblock %}
+
+{% block error_details %}
+<div class="text-sm text-gray-500 mb-4">
+    <p>Error Code: 500</p>
+    <p>Our team has been notified of this issue.</p>
+</div>
+{% endblock %}

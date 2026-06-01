@@ -1,0 +1,531 @@
+{% extends "base.html" %}
+
+{% block title %}Workflows - Reel v2{% endblock %}
+
+{% block content %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold dark:text-white">Workflows</h1>
+        <div class="flex gap-2">
+            <button onclick="showImportModal()" 
+                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 transition-colors">
+                <i class="fas fa-upload mr-2"></i>Import Workflow
+            </button>
+            <a href="{{ url_for('admin.new_workflow', type='campaign') }}" 
+               class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors">
+                New Campaign Workflow
+            </a>
+            <a href="{{ url_for('admin.new_workflow', type='sending') }}" 
+               class="px-4 py-2 bg-pink-500 text-white rounded hover:bg-pink-600 dark:bg-pink-500 dark:hover:bg-pink-600 transition-colors">
+                New Sending Workflow
+            </a>
+        </div>
+    </div>
+
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+        <div id="workflows-list" class="space-y-4">
+            <!-- Workflows will be loaded via JavaScript -->
+            <div class="text-center py-8 text-gray-500 dark:text-gray-400">
+                Loading workflows...
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Function to load workflows (node-based workflow graphs only)
+async function loadWorkflows() {
+    const container = document.getElementById('workflows-list');
+    const headers = {};
+    const token = localStorage.getItem('token');
+    if (token) { headers['Authorization'] = 'Bearer ' + token; }
+    try {
+        const nodeRes = await fetch('/api/workflows', { headers, credentials: 'same-origin' });
+        const nodeData = nodeRes.ok ? await nodeRes.json() : { workflows: [] };
+        const workflows = (nodeData.workflows || []).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+        if (workflows.length > 0) {
+            container.innerHTML = workflows.map(workflow => `
+                <div class="border rounded p-4 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 dark:border-gray-700">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-semibold text-lg dark:text-white">${escapeHtml(workflow.name)}</h3>
+                            <p class="text-gray-600 dark:text-gray-400 text-sm">${escapeHtml(workflow.description || 'No description')}</p>
+                            <div class="mt-2 flex gap-2">
+                                <span class="px-2 py-1 ${(workflow.workflow_type || 'campaign') === 'sending' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200'} rounded text-xs">
+                                    ${escapeHtml(workflow.workflow_type || 'campaign')}
+                                </span>
+                                <span class="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded text-xs">
+                                    ${workflow.node_count || 0} nodes
+                                </span>
+                            </div>
+                        </div>
+                        <div class="flex gap-2">
+                            <a href="/workflows/${workflow.id}" 
+                               class="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors">
+                                Edit
+                            </a>
+                            <button onclick="exportWorkflow(${workflow.id}, '${escapeHtml(workflow.name).replace(/'/g, "\\'")}')" 
+                                    class="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors">
+                                <i class="fas fa-download mr-1"></i>Export
+                            </button>
+                            <button onclick="deleteWorkflow(${workflow.id}, '${escapeHtml(workflow.name).replace(/'/g, "\\'")}')" 
+                                    class="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors">
+                                <i class="fas fa-trash mr-1"></i>Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>`).join('');
+        } else {
+            container.innerHTML = '<div class="text-center py-8 text-gray-500 dark:text-gray-400">No workflows found. Create your first workflow!</div>';
+        }
+    } catch (error) {
+        console.error('Error loading workflows:', error);
+        container.innerHTML = '<div class="text-center py-8 text-red-500 dark:text-red-400">Error loading workflows</div>';
+    }
+}
+
+// Function to delete a workflow
+async function deleteWorkflow(workflowId, workflowName) {
+    // Show confirmation dialog
+    const confirmed = await showConfirm(
+        `Are you sure you want to delete workflow "${workflowName}"? This action cannot be undone.`,
+        'Delete Workflow'
+    );
+    
+    if (!confirmed) {
+        return;
+    }
+    
+    // Delete workflow via API
+    try {
+        // Get CSRF token from meta tag
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        
+        const headers = { 'Content-Type': 'application/json' };
+        const token = localStorage.getItem('token');
+        if (token) { headers['Authorization'] = 'Bearer ' + token; }
+        if (csrfToken) { headers['X-CSRFToken'] = csrfToken; }
+
+        const response = await fetch(`/api/workflows/${workflowId}`, {
+            method: 'DELETE',
+            headers: headers,
+            credentials: 'same-origin'
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok && data.success) {
+            showToast('Workflow deleted successfully', 'success');
+            await loadWorkflows();
+        } else {
+            const errorMsg = data.error || data.message || 'Failed to delete workflow';
+            showToast('Error: ' + errorMsg, 'error');
+        }
+    } catch (error) {
+        console.error('Error deleting workflow:', error);
+        showToast('Error deleting workflow: ' + error.message, 'error');
+    }
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Export workflow functionality
+function exportWorkflow(workflowId, workflowName) {
+    const token = localStorage.getItem('token') || '';
+    const url = `/api/workflows/${workflowId}/export`;
+    
+    // Create a temporary link to trigger download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `workflow-${workflowName.replace(/[^a-z0-9]/gi, '-').toLowerCase()}.zip`;
+    
+    // Add auth header via fetch, then create blob download
+    fetch(url, {
+        headers: {
+            'Authorization': 'Bearer ' + token
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(data => {
+                throw new Error(data.error || 'Export failed');
+            });
+        }
+        return response.blob();
+    })
+    .then(blob => {
+        const blobUrl = window.URL.createObjectURL(blob);
+        link.href = blobUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(blobUrl);
+        showToast('Workflow exported successfully', 'success');
+    })
+    .catch(error => {
+        console.error('Error exporting workflow:', error);
+        showToast('Error exporting workflow: ' + error.message, 'error');
+    });
+}
+
+// Load workflows on page load
+loadWorkflows();
+
+// Import workflow functionality
+function showImportModal() {
+    document.getElementById('importModal').classList.remove('hidden');
+}
+
+let importWorkflowFile = null;
+
+function hideImportModal() {
+    document.getElementById('importModal').classList.add('hidden');
+    document.getElementById('importFileInput').value = '';
+    document.getElementById('importWorkflowName').value = '';
+    document.getElementById('importResult').innerHTML = '';
+    importWorkflowFile = null;
+    updateImportFileDisplay();
+}
+
+function formatImportFileSize(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function updateImportFileDisplay() {
+    const dropZone = document.getElementById('importDropZone');
+    const emptyState = document.getElementById('importEmptyState');
+    const fileState = document.getElementById('importFileState');
+    const fileNameEl = document.getElementById('importFileName');
+    const fileSizeEl = document.getElementById('importFileSize');
+
+    if (importWorkflowFile) {
+        if (emptyState) emptyState.classList.add('hidden');
+        if (fileState) fileState.classList.remove('hidden');
+        if (fileNameEl) fileNameEl.textContent = importWorkflowFile.name;
+        if (fileSizeEl) fileSizeEl.textContent = formatImportFileSize(importWorkflowFile.size);
+        if (dropZone) dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20', 'dark:border-blue-500');
+    } else {
+        if (emptyState) emptyState.classList.remove('hidden');
+        if (fileState) fileState.classList.add('hidden');
+        if (dropZone) dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20', 'dark:border-blue-500');
+    }
+}
+
+function clearImportFile() {
+    importWorkflowFile = null;
+    document.getElementById('importFileInput').value = '';
+    updateImportFileDisplay();
+}
+
+async function setImportFile(file) {
+    if (!file || !file.name.endsWith('.zip')) {
+        if (file) showToast('Please select a ZIP file', 'error');
+        return;
+    }
+    importWorkflowFile = file;
+    updateImportFileDisplay();
+
+    const nameInput = document.getElementById('importWorkflowName');
+    if (!nameInput) return;
+
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        if (typeof JSZip !== 'undefined') {
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            const manifestFile = zip.file('manifest.json');
+            if (manifestFile) {
+                const manifestContent = await manifestFile.async('string');
+                const manifest = JSON.parse(manifestContent);
+                nameInput.value = manifest.workflow_name || 'Imported Workflow';
+            } else {
+                nameInput.value = 'Imported Workflow';
+            }
+        } else {
+            nameInput.value = 'Imported Workflow';
+        }
+    } catch (error) {
+        console.error('Error extracting workflow name:', error);
+        nameInput.value = 'Imported Workflow';
+    }
+}
+
+async function handleImportFile(event) {
+    const file = event.target.files[0];
+    await setImportFile(file);
+}
+
+function handleImportDrop(event) {
+    event.preventDefault();
+    const dropZone = document.getElementById('importDropZone');
+    dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20', 'dark:border-blue-500');
+    document.getElementById('importDropText').classList.remove('hidden');
+    document.getElementById('importReleaseText').classList.add('hidden');
+    const files = event.dataTransfer.files;
+    if (files.length === 1) {
+        setImportFile(files[0]);
+    } else if (files.length > 1) {
+        showToast('Please drop only one file', 'error');
+    }
+}
+
+function handleImportDragOver(event) {
+    event.preventDefault();
+    const dropZone = document.getElementById('importDropZone');
+    dropZone.classList.add('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20', 'dark:border-blue-500');
+    document.getElementById('importDropText').classList.add('hidden');
+    document.getElementById('importReleaseText').classList.remove('hidden');
+}
+
+function handleImportDragLeave(event) {
+    event.preventDefault();
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+        const dropZone = document.getElementById('importDropZone');
+        dropZone.classList.remove('border-blue-500', 'bg-blue-50', 'dark:bg-blue-900/20', 'dark:border-blue-500');
+        document.getElementById('importDropText').classList.remove('hidden');
+        document.getElementById('importReleaseText').classList.add('hidden');
+    }
+}
+
+function importWorkflow() {
+    const nameInput = document.getElementById('importWorkflowName');
+    const file = importWorkflowFile;
+    
+    if (!file) {
+        showToast('Please select a file to import', 'error');
+        return;
+    }
+    
+    if (!file.name.endsWith('.zip')) {
+        showToast('Only ZIP files are allowed', 'error');
+        return;
+    }
+    
+    const workflowName = nameInput.value.trim();
+    if (!workflowName) {
+        showToast('Please enter a workflow name', 'error');
+        nameInput.focus();
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('name', workflowName);
+    
+    const resultDiv = document.getElementById('importResult');
+    const importButton = document.getElementById('importSubmitButton');
+    const originalButtonText = importButton.innerHTML;
+    
+    resultDiv.innerHTML = '<div class="text-center py-4"><i class="fas fa-spinner fa-spin text-blue-500 text-xl mb-2"></i><p class="text-gray-600 dark:text-gray-400">Importing workflow...</p></div>';
+    importButton.disabled = true;
+    importButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Importing...';
+    
+    // Get CSRF token from meta tag
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    const headers = {};
+    const token = localStorage.getItem('token');
+    if (token) { headers['Authorization'] = 'Bearer ' + token; }
+    if (csrfToken) { headers['X-CSRFToken'] = csrfToken; }
+
+    fetch('/api/workflows/import', {
+        method: 'POST',
+        headers: headers,
+        credentials: 'same-origin',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            resultDiv.innerHTML = `
+                <div class="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded p-4">
+                    <div class="flex items-center mb-2">
+                        <i class="fas fa-check-circle text-green-500 mr-2"></i>
+                        <h4 class="font-semibold text-green-800 dark:text-green-200">Import Successful</h4>
+                    </div>
+                    <p class="text-sm text-green-700 dark:text-green-300 mb-2">
+                        Workflow "${escapeHtml(data.workflow.name)}" imported successfully.
+                    </p>
+                    ${data.warnings && data.warnings.length > 0 ? `
+                        <div class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                            <strong>Warnings:</strong>
+                            <ul class="list-disc list-inside mt-1">
+                                ${data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            showToast('Workflow imported successfully', 'success');
+            setTimeout(() => {
+                loadWorkflows();
+                hideImportModal();
+            }, 1500);
+        } else {
+            resultDiv.innerHTML = `
+                <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-4">
+                    <div class="flex items-center mb-2">
+                        <i class="fas fa-exclamation-circle text-red-500 mr-2"></i>
+                        <h4 class="font-semibold text-red-800 dark:text-red-200">Import Failed</h4>
+                    </div>
+                    <p class="text-sm text-red-700 dark:text-red-300 mb-2">
+                        ${escapeHtml(data.message || 'Failed to import workflow')}
+                    </p>
+                    ${data.errors && data.errors.length > 0 ? `
+                        <div class="mt-2 text-sm text-red-700 dark:text-red-300">
+                            <strong>Errors:</strong>
+                            <ul class="list-disc list-inside mt-1">
+                                ${data.errors.map(e => `<li>${escapeHtml(e)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    ${data.warnings && data.warnings.length > 0 ? `
+                        <div class="mt-2 text-sm text-yellow-700 dark:text-yellow-300">
+                            <strong>Warnings:</strong>
+                            <ul class="list-disc list-inside mt-1">
+                                ${data.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}
+                            </ul>
+                        </div>
+                    ` : ''}
+                    <button onclick="hideImportModal()" 
+                            class="mt-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors">
+                        Close
+                    </button>
+                </div>
+            `;
+            showToast('Workflow import failed', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error importing workflow:', error);
+        resultDiv.innerHTML = `
+            <div class="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-4">
+                <div class="flex items-center mb-2">
+                    <i class="fas fa-exclamation-circle text-red-500 mr-2"></i>
+                    <h4 class="font-semibold text-red-800 dark:text-red-200">Import Error</h4>
+                </div>
+                <p class="text-sm text-red-700 dark:text-red-300">
+                    ${escapeHtml(error.message || 'An error occurred while importing the workflow')}
+                </p>
+                <button onclick="hideImportModal()" 
+                        class="mt-4 px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors">
+                    Close
+                </button>
+            </div>
+        `;
+        showToast('Error importing workflow', 'error');
+    })
+    .finally(() => {
+        importButton.disabled = false;
+        importButton.innerHTML = originalButtonText;
+    });
+}
+</script>
+
+<!-- Import Modal -->
+<div id="importModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
+    <div class="relative top-10 mx-auto p-5 border w-11/12 max-w-2xl shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div class="mb-4">
+            <div class="flex items-center justify-between">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">Import Workflow</h3>
+                <button onclick="hideImportModal()" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                Upload a workflow export file (.zip). Custom plugins will be installed automatically if included.
+            </p>
+        </div>
+
+        <div id="importDropZone"
+             onclick="document.getElementById('importFileInput').click()"
+             ondrop="handleImportDrop(event)"
+             ondragover="handleImportDragOver(event)"
+             ondragenter="event.preventDefault()"
+             ondragleave="handleImportDragLeave(event)"
+             class="mb-4 relative border-2 border-dashed border-gray-300 dark:border-gray-500 rounded-lg p-8 text-center hover:border-gray-400 dark:hover:border-gray-400 transition-colors cursor-pointer">
+                    
+                    <div id="importEmptyState">
+                        <div class="mx-auto mb-4">
+                            <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 dark:text-gray-500"></i>
+                        </div>
+                        <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                            <span id="importDropText">Drop your workflow package here</span>
+                            <span id="importReleaseText" class="hidden">Release to upload</span>
+                        </h4>
+                        <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                            or <span class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">browse files</span>
+                        </p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400">
+                            Workflow export (.zip) with manifest.json
+                        </p>
+                    </div>
+
+                    <div id="importFileState" class="hidden flex items-center justify-center space-x-3">
+                        <i class="fas fa-file-archive text-2xl text-blue-600 dark:text-blue-400"></i>
+                        <div class="text-left">
+                            <p class="font-medium text-gray-900 dark:text-white" id="importFileName"></p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400" id="importFileSize"></p>
+                        </div>
+                        <button type="button" onclick="event.stopPropagation(); clearImportFile();" class="text-red-500 hover:text-red-700 dark:hover:text-red-400">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <input type="file" id="importFileInput" accept=".zip" class="hidden" onchange="handleImportFile(event)">
+        </div>
+
+        <div class="mb-4">
+                <label for="importWorkflowName" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Workflow Name <span class="text-red-500">*</span>
+                </label>
+                <input type="text" 
+                       id="importWorkflowName" 
+                       name="workflow_name"
+                       required
+                       placeholder="Enter workflow name"
+                       class="block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm 
+                              bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                              focus:outline-none focus:ring-blue-500 focus:border-blue-500
+                              transition-colors duration-200">
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    The workflow name will be pre-filled from the export file. You can change it if needed.
+                </p>
+            </div>
+            
+            <div id="importResult" class="mb-4"></div>
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="hideImportModal()" 
+                        class="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-600 bg-white dark:bg-gray-700 transition-colors duration-200">
+                    Cancel
+                </button>
+                <button id="importSubmitButton" onclick="importWorkflow()" 
+                        class="px-4 py-2 bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 text-white rounded-md text-sm font-medium disabled:opacity-50 transition-colors duration-200">
+                    <i class="fas fa-upload mr-2"></i>Import
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Close modal when clicking outside
+document.getElementById('importModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideImportModal();
+    }
+});
+</script>
+{% endblock %}
+

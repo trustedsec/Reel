@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+
+{% block title %}Sending Workflows - Reel v2{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8" x-data="sendingWorkflowManager()" x-init="init()">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold dark:text-white">Sending Workflows</h1>
+        <a href="{{ url_for('admin.new_sending_workflow') }}" 
+           class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+            <i class="fas fa-plus mr-2"></i>New Sending Workflow
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-4 mb-6">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+                <label class="block text-sm font-medium mb-2 dark:text-gray-300">Search</label>
+                <input type="text" x-model="filters.search" 
+                       @input="loadWorkflows()"
+                       placeholder="Search workflows..."
+                       class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2 dark:text-gray-300">Status</label>
+                <select x-model="filters.status" @change="loadWorkflows()"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <option value="">All Statuses</option>
+                    <option value="draft">Draft</option>
+                    <option value="scheduled">Scheduled</option>
+                    <option value="running">Running</option>
+                    <option value="completed">Completed</option>
+                    <option value="failed">Failed</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium mb-2 dark:text-gray-300">Campaign</label>
+                <select x-model="filters.campaign_id" @change="loadWorkflows()"
+                        class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <option value="">All Campaigns</option>
+                    <template x-for="campaign in campaigns" :key="campaign.id">
+                        <option :value="campaign.id" x-text="campaign.name"></option>
+                    </template>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Workflows List -->
+    <div class="bg-white dark:bg-gray-800 rounded-lg shadow">
+        <div x-show="loading" class="p-8 text-center">
+            <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+        </div>
+
+        <div x-show="!loading && workflows.length === 0" class="p-8 text-center text-gray-500">
+            No sending workflows found.
+        </div>
+
+        <div x-show="!loading && workflows.length > 0" class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Name</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Campaign</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Status</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Progress</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Created</th>
+                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                    <template x-for="workflow in workflows" :key="workflow.id">
+                        <tr class="hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <td class="px-6 py-4">
+                                <a :href="`/sending-workflows/${workflow.id}`" 
+                                   class="font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                                   x-text="workflow.name"></a>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300" x-text="workflow.campaign_name"></td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 text-xs rounded-full"
+                                      :class="{
+                                          'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-300': workflow.status === 'draft',
+                                          'bg-yellow-200 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200': workflow.status === 'scheduled',
+                                          'bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200': workflow.status === 'running',
+                                          'bg-green-200 dark:bg-green-800 text-green-800 dark:text-green-200': workflow.status === 'completed',
+                                          'bg-red-200 dark:bg-red-800 text-red-800 dark:text-red-200': workflow.status === 'failed'
+                                      }"
+                                      x-text="workflow.status"></span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
+                                <span x-text="`${workflow.stats?.sent || 0}/${workflow.stats?.total || 0}`"></span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-600 dark:text-gray-300" x-text="formatDate(workflow.created_at)"></td>
+                            <td class="px-6 py-4">
+                                <div class="flex gap-2">
+                                    <button @click="executeWorkflow(workflow.id)" 
+                                            x-show="workflow.status !== 'running'"
+                                            class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300">
+                                        <i class="fas fa-play"></i>
+                                    </button>
+                                    <a :href="`/sending-workflows/${workflow.id}`" 
+                                       class="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <button @click="deleteWorkflow(workflow.id)" 
+                                            x-show="workflow.status !== 'running'"
+                                            class="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div x-show="!loading && pagination.pages > 1" class="p-4 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center">
+            <div class="text-sm text-gray-600 dark:text-gray-400">
+                Showing <span x-text="((pagination.page - 1) * pagination.per_page) + 1"></span> to 
+                <span x-text="Math.min(pagination.page * pagination.per_page, pagination.total)"></span> of 
+                <span x-text="pagination.total"></span> workflows
+            </div>
+            <div class="flex gap-2">
+                <button @click="changePage(pagination.page - 1)" 
+                        :disabled="pagination.page <= 1"
+                        class="px-3 py-1 border rounded disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    Previous
+                </button>
+                <button @click="changePage(pagination.page + 1)" 
+                        :disabled="pagination.page >= pagination.pages"
+                        class="px-3 py-1 border rounded disabled:opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    Next
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function sendingWorkflowManager() {
+    return {
+        workflows: [],
+        campaigns: [],
+        loading: false,
+        pagination: {
+            page: 1,
+            per_page: 20,
+            total: 0,
+            pages: 0
+        },
+        filters: {
+            search: '',
+            status: '',
+            campaign_id: ''
+        },
+        
+        async init() {
+            const params = new URLSearchParams(window.location.search);
+            const campaignId = params.get('campaign_id');
+            if (campaignId) {
+                this.filters.campaign_id = campaignId;
+            }
+            await this.loadCampaigns();
+            await this.loadWorkflows();
+        },
+        
+        async loadCampaigns() {
+            try {
+                const response = await fetch('/api/campaigns?per_page=1000');
+                const data = await response.json();
+                this.campaigns = data.campaigns || [];
+            } catch (error) {
+                console.error('Error loading campaigns:', error);
+            }
+        },
+        
+        async loadWorkflows() {
+            this.loading = true;
+            try {
+                const params = new URLSearchParams({
+                    page: this.pagination.page,
+                    per_page: this.pagination.per_page
+                });
+                
+                if (this.filters.status) {
+                    params.append('status', this.filters.status);
+                }
+                if (this.filters.campaign_id) {
+                    params.append('campaign_id', this.filters.campaign_id);
+                }
+                
+                const response = await fetch(`/api/sending-workflows?${params}`);
+                const data = await response.json();
+                
+                this.workflows = data.workflows || [];
+                this.pagination = data.pagination || this.pagination;
+                
+                // Load stats for each workflow
+                for (let workflow of this.workflows) {
+                    try {
+                        const statsResponse = await fetch(`/api/sending-workflows/${workflow.id}/stats`);
+                        const stats = await statsResponse.json();
+                        workflow.stats = stats;
+                    } catch (e) {
+                        console.error(`Error loading stats for workflow ${workflow.id}:`, e);
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading workflows:', error);
+                showToast('Error loading sending workflows', 'error');
+            } finally {
+                this.loading = false;
+            }
+        },
+        
+        changePage(page) {
+            if (page >= 1 && page <= this.pagination.pages) {
+                this.pagination.page = page;
+                this.loadWorkflows();
+            }
+        },
+        
+        async executeWorkflow(workflowId) {
+            const confirmed = await showConfirm('Execute this sending workflow?', 'Execute Workflow');
+            if (!confirmed) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sending-workflows/${workflowId}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    showToast('Workflow execution started', 'success');
+                    await this.loadWorkflows();
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to execute workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error executing workflow:', error);
+                showToast('Error executing workflow', 'error');
+            }
+        },
+        
+        async deleteWorkflow(workflowId) {
+            const confirmed = await showConfirm('Delete this sending workflow?', 'Delete Workflow');
+            if (!confirmed) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sending-workflows/${workflowId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    showToast('Workflow deleted', 'success');
+                    await this.loadWorkflows();
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to delete workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error deleting workflow:', error);
+                showToast('Error deleting workflow', 'error');
+            }
+        },
+        
+        formatDate(dateString) {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+    };
+}
+</script>
+{% endblock %}

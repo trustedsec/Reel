@@ -1,0 +1,1461 @@
+{% extends "base.html" %}
+
+{% block title %}Campaign Detail - Reel v2 Admin{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    {% if campaign %}
+    <!-- Header -->
+    <div class="md:flex md:items-center md:justify-between">
+        <div class="flex-1 min-w-0">
+            <nav class="flex" aria-label="Breadcrumb">
+                <ol class="flex items-center space-x-4">
+                    <li>
+                        <div>
+                            <a href="{{ url_for('admin.campaigns') }}" class="text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-300">
+                                <i class="fas fa-bullseye"></i>
+                                <span class="sr-only">Campaigns</span>
+                            </a>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="flex items-center">
+                            <i class="fas fa-chevron-right text-gray-400 dark:text-gray-500"></i>
+                            <span class="ml-4 text-sm font-medium text-gray-500 dark:text-gray-400">{{ campaign.name }}</span>
+                        </div>
+                    </li>
+                </ol>
+            </nav>
+            <h2 class="mt-2 text-2xl font-bold leading-7 text-gray-900 dark:text-white sm:text-3xl sm:truncate">
+                {{ campaign.name }}
+            </h2>
+            <div class="mt-1 flex flex-col sm:flex-row sm:flex-wrap sm:mt-0 sm:space-x-6">
+                <div class="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-tag mr-1.5 text-gray-400 dark:text-gray-500"></i>
+                    UID: {{ campaign.uid }}
+                </div>
+                <div class="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-calendar mr-1.5 text-gray-400 dark:text-gray-500"></i>
+                    Created {{ campaign.created_at.strftime('%B %d, %Y') if campaign.created_at else 'Unknown' }}
+                </div>
+                <div class="mt-2 flex items-center text-sm text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-user mr-1.5 text-gray-400 dark:text-gray-500"></i>
+                    {{ campaign.created_by.username if campaign.created_by else 'Unknown' }}
+                </div>
+            </div>
+        </div>
+        <div class="mt-4 flex md:mt-0 md:ml-4 space-x-3">
+            {% if campaign.status == 'draft' %}
+            <button onclick="startCampaign()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 transition-colors duration-200">
+                <i class="fas fa-play mr-2"></i>
+                Start Campaign
+            </button>
+            {% elif campaign.status == 'active' %}
+            <button onclick="pauseCampaign()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 dark:bg-yellow-500 dark:hover:bg-yellow-600 transition-colors duration-200">
+                <i class="fas fa-pause mr-2"></i>
+                Pause Campaign
+            </button>
+            {% elif campaign.status == 'paused' %}
+            <button onclick="resumeCampaign()" class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 transition-colors duration-200">
+                <i class="fas fa-play mr-2"></i>
+                Resume Campaign
+            </button>
+            {% endif %}
+            
+            <a href="{{ url_for('admin.edit_campaign', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors duration-200">
+                <i class="fas fa-edit mr-2"></i>
+                Edit
+            </a>
+            {% if campaign.campaign_type == 'inbound' %}
+            <a href="{{ url_for('admin.campaign_tracking', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors duration-200">
+                <i class="fas fa-chart-line mr-2"></i>
+                Tracking
+            </a>
+            <a href="{{ url_for('admin.campaign_credential_proxy', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors duration-200">
+                <i class="fas fa-key mr-2"></i>
+                Credential proxy
+            </a>
+            {% endif %}
+            {% if campaign.campaign_type == 'outbound' %}
+            {% if sending_workflow %}
+            <button type="button" data-send-workflow-id="{{ sending_workflow.id }}" data-send-workflow-name="{{ sending_workflow.name or 'Send' | e }}"
+                    {% if campaign.status != 'active' %}disabled title="Campaign must be active to send (currently {{ campaign.status }})"{% endif %}
+                    class="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600 transition-colors duration-200 send-campaign-btn disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600">
+                <i class="fas fa-paper-plane mr-2"></i>
+                Send
+            </button>
+            <a href="{{ url_for('admin.workflow_detail', workflow_id=campaign.post_workflow_id) }}" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-edit mr-2"></i>
+                Edit workflow
+            </a>
+            {% else %}
+            <span class="text-sm text-gray-500 dark:text-gray-400 self-center">Link an outbound workflow in the campaign edit form.</span>
+            <a href="{{ url_for('admin.edit_campaign', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                Edit campaign
+            </a>
+            {% endif %}
+            {% endif %}
+            <button onclick="deleteCampaign()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-trash mr-2"></i>
+                Delete
+            </button>
+        </div>
+    </div>
+
+    <!-- Status Banner -->
+    <div class="rounded-md p-4 transition-colors duration-200 {% if campaign.status == 'active' %}bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800{% elif campaign.status == 'paused' %}bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800{% elif campaign.status == 'completed' %}bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-700{% else %}bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800{% endif %}">
+        <div class="flex">
+            <div class="flex-shrink-0">
+                {% if campaign.status == 'active' %}
+                <i class="fas fa-play-circle text-green-400 text-xl"></i>
+                {% elif campaign.status == 'paused' %}
+                <i class="fas fa-pause-circle text-yellow-400 text-xl"></i>
+                {% elif campaign.status == 'completed' %}
+                <i class="fas fa-check-circle text-gray-400 text-xl"></i>
+                {% else %}
+                <i class="fas fa-edit text-blue-400 text-xl"></i>
+                {% endif %}
+            </div>
+            <div class="ml-3">
+                <h3 class="text-sm font-medium {% if campaign.status == 'active' %}text-green-800 dark:text-green-200{% elif campaign.status == 'paused' %}text-yellow-800 dark:text-yellow-200{% elif campaign.status == 'completed' %}text-gray-800 dark:text-gray-200{% else %}text-blue-800 dark:text-blue-200{% endif %}">
+                    Campaign is {{ campaign.status | title }}
+                </h3>
+                <div class="mt-2 text-sm {% if campaign.status == 'active' %}text-green-700 dark:text-green-300{% elif campaign.status == 'paused' %}text-yellow-700 dark:text-yellow-300{% elif campaign.status == 'completed' %}text-gray-700 dark:text-gray-300{% else %}text-blue-700 dark:text-blue-300{% endif %}">
+                    <p>
+                        {% if campaign.status == 'active' %}
+                        {% if campaign.campaign_type == 'outbound' %}
+                        This campaign is active and ready to launch.
+                        {% else %}
+                        This campaign is currently running and collecting data.
+                        {% endif %}
+                        {% elif campaign.status == 'paused' %}
+                        {% if campaign.campaign_type == 'outbound' %}
+                        This campaign is paused. Sending is disabled — activate it to send.
+                        {% else %}
+                        This campaign is paused. Visitors will see a maintenance page.
+                        {% endif %}
+                        {% elif campaign.status == 'completed' %}
+                        This campaign has been completed and is no longer active.
+                        {% else %}
+                        This campaign is in draft mode. Configure and start it when ready.
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {% if campaign.campaign_type == 'inbound' %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-eye text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Total Views</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {% set page_views = campaign.events | selectattr('event_type', 'equalto', 'page_view') | list | length %}
+                                {% if page_views > 0 %}
+                                    {{ page_views }}
+                                {% else %}
+                                    {{ campaign.events | length }}
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-mouse-pointer text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Form Submissions</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {% set form_submits = (campaign.events | selectattr('event_type', 'equalto', 'form_submit') | list | length) + (campaign.events | selectattr('event_type', 'equalto', 'form_submitted') | list | length) %}
+                                {% set credentials = campaign.events | selectattr('event_type', 'equalto', 'credentials') | list | length %}
+                                {{ form_submits + credentials }}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-users text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Unique Visitors</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {{ campaign.events | map(attribute='ip_address') | unique | list | length }}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-percentage text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Success Rate</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                {% set page_views = campaign.events | selectattr('event_type', 'equalto', 'page_view') | list | length %}
+                                {% set views = page_views if page_views > 0 else campaign.events | length %}
+                                {% set form_submits = (campaign.events | selectattr('event_type', 'equalto', 'form_submit') | list | length) + (campaign.events | selectattr('event_type', 'equalto', 'form_submitted') | list | length) %}
+                                {% set credentials = campaign.events | selectattr('event_type', 'equalto', 'credentials') | list | length %}
+                                {% set submissions = form_submits + credentials %}
+                                {% if views > 0 %}
+                                {{ "%.1f" | format((submissions / views * 100)) }}%
+                                {% else %}
+                                0%
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-envelope text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Emails sent</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">{{ outbound_emails_sent }}<span class="text-sm font-normal text-red-600 dark:text-red-400 ml-2">/ {{ outbound_emails_failed }} failed</span></dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden transition-colors duration-200">
+            <div class="p-5">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-comment-sms text-gray-400 dark:text-gray-500 text-2xl"></i>
+                    </div>
+                    <div class="ml-5 w-0 flex-1">
+                        <dl>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">SMS/MMS sent</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">{{ outbound_sms_sent }}<span class="text-sm font-normal text-red-600 dark:text-red-400 ml-2">/ {{ outbound_sms_failed }} failed</span></dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Captured Credentials (inbound only) -->
+    {% if campaign.campaign_type == 'inbound' %}
+    {% set credential_events_initial = campaign.events | selectattr('event_type', 'equalto', 'credentials') | list %}
+    <div id="credentials-section" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">
+                    <i class="fas fa-key text-orange-500 mr-2"></i>
+                    Captured Credentials (<span id="credentials-count">{{ credential_events_initial | length }}</span>)
+                </h3>
+            </div>
+            
+            <div id="credentials-empty-state" class="text-center py-8 text-gray-500 dark:text-gray-400" style="display: {% if credential_events_initial %}none{% else %}block{% endif %};">
+                <i class="fas fa-key text-4xl mb-4"></i>
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white">No credentials captured yet</h4>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Captured credentials will appear here.</p>
+            </div>
+            
+            <div id="credentials-table-container" class="overflow-x-auto" style="display: {% if credential_events_initial %}block{% else %}none{% endif %};">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Username/Email</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Password</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">IP Address</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Captured At</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="credentials-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <!-- Rows populated by loadCredentials() on DOMContentLoaded.
+                             Server-side rendering removed: building inline
+                             onclick="copyCredential('{{ value }}', ...)" placed Jinja-escaped
+                             victim strings inside a JS string literal in an HTML attribute,
+                             which decodes back through HTML escaping and breaks out of the
+                             string context (stored XSS into operator session). -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Campaign Details -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">Campaign Details</h3>
+            <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+                {% if campaign.campaign_type == 'inbound' %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">GET Workflow</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {% if campaign.get_workflow %}
+                            {{ campaign.get_workflow.name }}
+                        {% else %}
+                            <span class="text-gray-400">Not set</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">POST Workflow</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {% if campaign.post_workflow %}
+                            {{ campaign.post_workflow.name }}
+                        {% else %}
+                            <span class="text-gray-400">Not set</span>
+                        {% endif %}
+                    </dd>
+                </div>
+                {% else %}
+                {% if campaign.post_workflow_id %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Outbound workflow</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        <a href="{{ url_for('admin.workflow_detail', workflow_id=campaign.post_workflow_id) }}" class="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">{{ campaign.post_workflow.name }}</a>
+                    </dd>
+                </div>
+                {% endif %}
+                {% endif %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Template</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {% if campaign.template %}
+                        <a href="#" class="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">{{ campaign.template.name }}</a>
+                        {% else %}
+                        Custom Template
+                        {% endif %}
+                    </dd>
+                </div>
+                {% if campaign.campaign_type == 'inbound' %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Campaign URL</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        <code class="bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded text-xs text-gray-900 dark:text-white">{% if campaign.custom_domain %}{{ 'https://' if campaign.ssl_mode != 'disabled' else 'http://' }}{{ campaign.custom_domain }}{% else %}{{ phishing_url }}/{{ campaign.uid }}{% endif %}{% if getattr(campaign, 'gate_enabled', False) and campaign.gate_token %}?{{ campaign.gate_param_name or 'rid' }}={{ campaign.gate_token }}{% endif %}</code>
+                        <button onclick="copyToClipboard(getCampaignURL(), this)" 
+                                class="ml-2 text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                            <i class="fas fa-copy"></i>
+                        </button>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">SSL Configuration</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        <div class="flex items-center space-x-2">
+                            {% if campaign.ssl_mode == 'automatic' %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                                    <i class="fas fa-lock mr-1"></i>
+                                    Let's Encrypt
+                                </span>
+                            {% elif campaign.ssl_mode == 'custom' %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                                    <i class="fas fa-certificate mr-1"></i>
+                                    Custom Certificate
+                                </span>
+                            {% elif campaign.ssl_mode == 'self_signed' %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>
+                                    Self-Signed
+                                </span>
+                            {% elif campaign.ssl_mode == 'disabled' %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300">
+                                    <i class="fas fa-unlock mr-1"></i>
+                                    HTTP Only
+                                </span>
+                            {% else %}
+                                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-900/30 text-gray-800 dark:text-gray-300">
+                                    <i class="fas fa-question-circle mr-1"></i>
+                                    Not Set
+                                </span>
+                            {% endif %}
+                            
+                            {% if campaign.ssl_mode == 'custom' and campaign.ssl_cert_path %}
+                                <button onclick="showSSLDetails()" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs">
+                                    <i class="fas fa-info-circle"></i> Details
+                                </button>
+                            {% endif %}
+                        </div>
+                    </dd>
+                </div>
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Caddy Status</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        <div class="flex items-center space-x-2">
+                            <span id="caddy-status" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                                <i class="fas fa-spinner fa-spin mr-1"></i>
+                                Checking...
+                            </span>
+                            {% if campaign.status == 'active' and campaign.custom_domain %}
+                                <button onclick="testSSLEndpoint()" class="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs">
+                                    <i class="fas fa-globe"></i> Test
+                                </button>
+                            {% endif %}
+                        </div>
+                    </dd>
+                </div>
+                {% endif %}
+                <div>
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Last Updated</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">
+                        {{ campaign.updated_at.strftime('%B %d, %Y at %I:%M %p') if campaign.updated_at else 'Never' }}
+                    </dd>
+                </div>
+                {% if campaign.description %}
+                <div class="sm:col-span-2">
+                    <dt class="text-sm font-medium text-gray-500 dark:text-gray-400">Description</dt>
+                    <dd class="mt-1 text-sm text-gray-900 dark:text-white">{{ campaign.description }}</dd>
+                </div>
+                {% endif %}
+            </dl>
+        </div>
+    </div>
+
+    <!-- Reporting -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200"
+         x-data='window.reportingCharts({{ campaign.id }}, {{ campaign.campaign_type | tojson }}, {{ campaign.name | tojson }}, {{ campaign.uid | tojson }})'
+         x-init="init()">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+                <div>
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fas fa-chart-area mr-2 text-gray-500 dark:text-gray-400"></i>Reporting
+                    </h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">{% if campaign.campaign_type == 'outbound' %}Emails sent and send results over time.{% else %}Time-series and export for reports.{% endif %}</p>
+                </div>
+                <div class="flex items-center gap-3 flex-shrink-0">
+                    <span class="text-sm text-gray-500 dark:text-gray-400">Date range</span>
+                    <div class="inline-flex gap-1.5" role="group">
+                        <button @click="setDateRange(7)"
+                                class="px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 border"
+                                :class="dateRange === 7 ? 'bg-blue-500 border-blue-500 text-white shadow-sm' : 'border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'">7 days</button>
+                        <button @click="setDateRange(30)"
+                                class="px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 border"
+                                :class="dateRange === 30 ? 'bg-blue-500 border-blue-500 text-white shadow-sm' : 'border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'">30 days</button>
+                        <button @click="setDateRange(90)"
+                                class="px-3 py-2 rounded-md text-sm font-medium transition-colors duration-200 border"
+                                :class="dateRange === 90 ? 'bg-blue-500 border-blue-500 text-white shadow-sm' : 'border-gray-300 dark:border-gray-500 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600'">90 days</button>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="loading" class="min-h-[280px] flex items-center justify-center py-12">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>Loading chart data…
+                </p>
+            </div>
+
+            <div x-show="!loading && !seriesData" class="min-h-[280px] flex items-center justify-center py-12 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-none bg-gray-50 dark:bg-gray-700/30">
+                <div class="text-center px-4">
+                    <i class="fas fa-chart-line text-4xl text-gray-300 dark:text-gray-500 mb-3"></i>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">No chart data</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Charts will appear here once there is {% if campaign.campaign_type == 'outbound' %}send data{% else %}activity{% endif %} in the selected range.</p>
+                </div>
+            </div>
+
+            <div x-show="!loading && seriesData && !hasChartData()" class="min-h-[280px] flex items-center justify-center py-12 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-none bg-gray-50 dark:bg-gray-700/30">
+                <div class="text-center px-4">
+                    <i class="fas fa-chart-line text-4xl text-gray-300 dark:text-gray-500 mb-3"></i>
+                    <p class="text-sm font-medium text-gray-700 dark:text-gray-300">No {% if campaign.campaign_type == 'outbound' %}send data{% else %}activity{% endif %} in this range</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Try a different date range or wait for new data.</p>
+                </div>
+            </div>
+
+            <!-- Chart area: x-show so canvases stay in DOM (avoids Chart.js ownerDocument errors with x-if) -->
+            <div x-show="!loading && seriesData && hasChartData()" class="space-y-6 min-h-[200px]" x-transition>
+                <!-- Inbound: Activity over time -->
+                <div x-show="campaignType === 'inbound' && seriesData?.inbound" x-transition class="border-2 border-black dark:border-gray-600 rounded-none p-4 bg-white dark:bg-gray-700/50">
+                    <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Activity over time</h4>
+                    <div class="relative h-64">
+                        <canvas id="reporting-chart-activity" x-ref="chartActivity"></canvas>
+                    </div>
+                    <button @click="saveChart('chartActivity', 'activity-over-time')"
+                            class="mt-3 px-3 py-2 border-2 border-black dark:border-gray-500 rounded-none font-medium text-sm bg-white dark:bg-gray-700 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200">
+                        <i class="fas fa-download mr-2"></i>Save as image
+                    </button>
+                </div>
+                <!-- Outbound: Send results over time -->
+                <div x-show="campaignType === 'outbound' && seriesData?.outbound" x-transition class="space-y-6">
+                    <div class="border-2 border-black dark:border-gray-600 rounded-none p-4 bg-white dark:bg-gray-700/50">
+                        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Send results over time</h4>
+                        <div class="relative h-64">
+                            <canvas id="reporting-chart-send-results" x-ref="chartSendResults"></canvas>
+                        </div>
+                        <button @click="saveChart('chartSendResults', 'send-results')"
+                                class="mt-3 px-3 py-2 border-2 border-black dark:border-gray-500 rounded-none font-medium text-sm bg-white dark:bg-gray-700 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200">
+                            <i class="fas fa-download mr-2"></i>Save as image
+                        </button>
+                    </div>
+                    <div class="border-2 border-black dark:border-gray-600 rounded-none p-4 bg-white dark:bg-gray-700/50">
+                        <h4 class="text-sm font-medium text-gray-900 dark:text-white mb-2">Email vs Call</h4>
+                        <div class="relative h-64">
+                            <canvas id="reporting-chart-email-call" x-ref="chartEmailCall"></canvas>
+                        </div>
+                        <button @click="saveChart('chartEmailCall', 'email-vs-call')"
+                                class="mt-3 px-3 py-2 border-2 border-black dark:border-gray-500 rounded-none font-medium text-sm bg-white dark:bg-gray-700 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors duration-200">
+                            <i class="fas fa-download mr-2"></i>Save as image
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Events -->
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">Recent Events</h3>
+                <a href="#" class="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">View all events</a>
+            </div>
+            
+            {% if campaign.events %}
+            <div class="flow-root">
+                <ul id="recent-events-list" class="-mb-8">
+                    {% for event in campaign.events | sort(attribute='created_at', reverse=true) | list | slice(10) | first %}
+                    <li>
+                        <div class="relative pb-8">
+                            {% if not loop.last %}
+                            <span class="absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700" aria-hidden="true"></span>
+                            {% endif %}
+                            <div class="relative flex space-x-3">
+                                <div>
+                                    <span class="h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white dark:ring-gray-800
+                                        {% if event.event_type == 'page_view' %}bg-blue-500
+                                        {% elif event.event_type in ('form_submit', 'form_submitted') %}bg-red-500
+                                        {% elif event.event_type == 'credential_captured' %}bg-orange-500
+                                        {% elif event.event_type == 'phishing_detection' %}bg-indigo-500
+                                        {% else %}bg-gray-500{% endif %}">
+                                        {% if event.event_type == 'page_view' %}
+                                        <i class="fas fa-eye text-white text-xs"></i>
+                                        {% elif event.event_type in ('form_submit', 'form_submitted') %}
+                                        <i class="fas fa-paper-plane text-white text-xs"></i>
+                                        {% elif event.event_type == 'credential_captured' %}
+                                        <i class="fas fa-key text-white text-xs"></i>
+                                        {% elif event.event_type == 'phishing_detection' %}
+                                        <i class="fas fa-shield-alt text-white text-xs"></i>
+                                        {% else %}
+                                        <i class="fas fa-circle text-white text-xs"></i>
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                <div class="min-w-0 flex-1 pt-1.5 flex justify-between space-x-4">
+                                    <div>
+                                        <p class="text-sm text-gray-500 dark:text-gray-400">
+                                            {% if event.event_type == 'page_view' %}
+                                            Page viewed
+                                            {% elif event.event_type in ('form_submit', 'form_submitted') %}
+                                            Form submitted
+                                            {% elif event.event_type == 'credential_captured' %}
+                                            Credentials captured
+                                            {% elif event.event_type == 'phishing_detection' %}
+                                            Phishing detection
+                                            {% else %}
+                                            {{ event.event_type | title }}
+                                            {% endif %}
+                                            {% if event.ip_address %}
+                                            from <span class="font-medium">{{ event.ip_address }}</span>
+                                            {% endif %}
+                                        </p>
+                                        {% if event.data %}
+                                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                                            {% if event.event_type == 'phishing_detection' and event.data is mapping and event.data.get('summary') %}
+                                            {{ event.data.summary }}
+                                            {% else %}
+                                            {{ event.data | truncate(100) }}
+                                            {% endif %}
+                                        </p>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-right text-sm whitespace-nowrap text-gray-500 dark:text-gray-400">
+                                        {{ event.created_at.strftime('%b %d, %I:%M %p') if event.created_at else 'Unknown' }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% else %}
+            <div id="recent-events-empty" class="text-center py-8">
+                <i class="fas fa-chart-line text-gray-400 dark:text-gray-500 text-4xl mb-4"></i>
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white">No events yet</h4>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Events will appear here once the campaign starts receiving traffic.</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Send Logs Section (for outbound campaigns) -->
+    {% if campaign.campaign_type == 'outbound' %}
+    <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200 mt-8"
+         x-data="{
+             sendLogs: [],
+             loadingSendLogs: false,
+             sendLogFilters: { type: '', status: '' },
+             sendLogPagination: { page: 1, per_page: 50, total: 0, pages: 0 },
+             
+             async loadSendLogs() {
+                 this.loadingSendLogs = true;
+                 try {
+                     const params = new URLSearchParams();
+                     if (this.sendLogFilters.type) params.append('type', this.sendLogFilters.type);
+                     if (this.sendLogFilters.status) params.append('status', this.sendLogFilters.status);
+                     params.append('page', this.sendLogPagination.page);
+                     params.append('per_page', this.sendLogPagination.per_page);
+                     
+                     const response = await fetch(`/api/campaigns/{{ campaign.id }}/send-logs?${params}`);
+                     if (response.ok) {
+                         const data = await response.json();
+                         this.sendLogs = data.logs || [];
+                         this.sendLogPagination = {
+                             ...this.sendLogPagination,
+                             total: data.pagination?.total || 0,
+                             pages: data.pagination?.pages || 0,
+                             has_next: data.pagination?.has_next || false,
+                             has_prev: data.pagination?.has_prev || false
+                         };
+                     }
+                 } catch (error) {
+                     console.error('Error loading send logs:', error);
+                 } finally {
+                     this.loadingSendLogs = false;
+                 }
+             },
+             
+             changePage(page) {
+                 if (page >= 1 && page <= this.sendLogPagination.pages) {
+                     this.sendLogPagination.page = page;
+                     this.loadSendLogs();
+                 }
+             },
+             
+             formatDate(dateString) {
+                 if (!dateString) return '-';
+                 const date = new Date(dateString);
+                 return date.toLocaleString('en-US', {
+                     month: 'short',
+                     day: 'numeric',
+                     year: 'numeric',
+                     hour: 'numeric',
+                     minute: '2-digit',
+                     hour12: true
+                 });
+             }
+         }"
+         x-init="loadSendLogs()">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">
+                    <i class="fas fa-paper-plane mr-2"></i>
+                    Send Logs
+                </h3>
+                <div class="flex gap-2">
+                    <select x-model="sendLogFilters.type" @change="sendLogPagination.page = 1; loadSendLogs()"
+                            class="px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All Types</option>
+                        <option value="email">Email</option>
+                        <option value="call">Call</option>
+                    </select>
+                    <select x-model="sendLogFilters.status" @change="sendLogPagination.page = 1; loadSendLogs()"
+                            class="px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-md text-sm focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">All Statuses</option>
+                        <option value="sent">Sent</option>
+                        <option value="completed">Completed</option>
+                        <option value="failed">Failed</option>
+                        <option value="pending">Pending</option>
+                        <option value="retrying">Retrying</option>
+                    </select>
+                    <button @click="loadSendLogs()" 
+                            class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div x-show="loadingSendLogs" class="p-8 text-center">
+                <i class="fas fa-spinner fa-spin text-2xl text-gray-400"></i>
+            </div>
+            
+            <div x-show="!loadingSendLogs && sendLogs.length === 0" class="p-8 text-center text-gray-500 dark:text-gray-400">
+                <i class="fas fa-inbox text-4xl mb-2"></i>
+                <p>No send logs found.</p>
+            </div>
+            
+            <div x-show="!loadingSendLogs && sendLogs.length > 0" class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-900">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Type</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Target</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Sent At</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Error</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Retries</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        <template x-for="log in sendLogs" :key="log.id">
+                            <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                        <i :class="log.type === 'email' ? 'fas fa-envelope mr-1.5' : 'fas fa-phone mr-1.5'" class="text-gray-500 dark:text-gray-400"></i>
+                                        <span x-text="log.type"></span>
+                                    </span>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-900 dark:text-white" x-text="log.target"></td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium"
+                                          :class="{
+                                              'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-200': log.status === 'pending',
+                                              'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-200': log.status === 'sent' || log.status === 'completed',
+                                              'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-200': log.status === 'failed',
+                                              'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-200': log.status === 'retrying'
+                                          }"
+                                          x-text="log.status"></span>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap" x-text="formatDate(log.sent_at)"></td>
+                                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400" x-text="log.error_message || '—'"></td>
+                                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-300" x-text="log.retry_count || 0"></td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div x-show="!loadingSendLogs && sendLogPagination.pages > 1" class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex flex-wrap justify-between items-center gap-2">
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    Showing <span x-text="((sendLogPagination.page - 1) * sendLogPagination.per_page) + 1"></span>–<span x-text="Math.min(sendLogPagination.page * sendLogPagination.per_page, sendLogPagination.total)"></span> of <span x-text="sendLogPagination.total"></span>
+                </p>
+                <div class="flex gap-2">
+                    <button @click="changePage(sendLogPagination.page - 1)" 
+                            :disabled="!sendLogPagination.has_prev"
+                            class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Previous
+                    </button>
+                    <button @click="changePage(sendLogPagination.page + 1)" 
+                            :disabled="!sendLogPagination.has_next"
+                            class="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Next
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <!-- Campaign Not Found -->
+    <div class="text-center py-12">
+        <i class="fas fa-exclamation-triangle text-gray-400 dark:text-gray-500 text-6xl mb-4"></i>
+        <h3 class="mt-2 text-sm font-medium text-gray-900 dark:text-white">Campaign not found</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">The campaign you're looking for doesn't exist or has been deleted.</p>
+        <div class="mt-6">
+            <a href="{{ url_for('admin.campaigns') }}" 
+               class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors duration-200">
+                <i class="fas fa-arrow-left mr-2"></i>
+                Back to Campaigns
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div id="deleteModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div class="mt-3 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 dark:bg-red-900/30">
+                <i class="fas fa-exclamation-triangle text-red-600 dark:text-red-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mt-5">Delete Campaign</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    Are you sure you want to delete "{{ campaign.name if campaign else 'this campaign' }}"? This action cannot be undone and all associated data will be lost.
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <button id="confirmDelete" 
+                        class="px-4 py-2 bg-red-500 dark:bg-red-600 text-white text-base font-medium rounded-md w-24 mr-2 hover:bg-red-600 dark:hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-300 transition-colors duration-200">
+                    Delete
+                </button>
+                <button onclick="hideDeleteModal()" 
+                        class="px-4 py-2 bg-gray-500 dark:bg-gray-600 text-white text-base font-medium rounded-md w-24 hover:bg-gray-600 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors duration-200">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SSL Details Modal -->
+{% if campaign and campaign.ssl_mode == 'custom' and campaign.ssl_cert_path %}
+<div id="sslModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div class="mt-3">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white">SSL Certificate Details</h3>
+                <button onclick="hideSSLModal()" class="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div id="ssl-details-content" class="space-y-3">
+                <div class="text-center text-gray-500 dark:text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-xl mb-2"></i>
+                    <p>Loading certificate details...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function getCampaignURL() {
+    {% if campaign.custom_domain %}
+        var base = '{{ 'https://' if campaign.ssl_mode != 'disabled' else 'http://' }}{{ campaign.custom_domain }}';
+    {% else %}
+        var base = '{{ phishing_url }}/{{ campaign.uid }}';
+    {% endif %}
+    {% if getattr(campaign, 'gate_enabled', False) and campaign.gate_token %}
+        base += '?{{ campaign.gate_param_name or 'rid' }}={{ campaign.gate_token }}';
+    {% endif %}
+    return base;
+}
+
+function showSSLDetails() {
+    document.getElementById('sslModal').classList.remove('hidden');
+    
+    // Load SSL certificate details via API
+    fetch(`/api/campaigns/{{ campaign.id if campaign else 0 }}/ssl/details`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displaySSLDetails(data.ssl_info);
+            } else {
+                document.getElementById('ssl-details-content').innerHTML = `
+                    <div class="text-center text-red-500">
+                        <i class="fas fa-exclamation-triangle text-xl mb-2"></i>
+                        <p>Error loading certificate details</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            console.error('Error loading SSL details:', error);
+            document.getElementById('ssl-details-content').innerHTML = `
+                <div class="text-center text-red-500">
+                    <i class="fas fa-exclamation-triangle text-xl mb-2"></i>
+                    <p>Error loading certificate details</p>
+                </div>
+            `;
+        });
+}
+
+function displaySSLDetails(sslInfo) {
+    const expiryDate = new Date(sslInfo.not_after);
+    const now = new Date();
+    const daysUntilExpiry = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
+    
+    let expiryClass = 'text-green-600';
+    let expiryIcon = 'fa-check-circle';
+    
+    if (daysUntilExpiry < 30) {
+        expiryClass = 'text-yellow-600';
+        expiryIcon = 'fa-exclamation-triangle';
+    }
+    if (daysUntilExpiry < 7) {
+        expiryClass = 'text-red-600';
+        expiryIcon = 'fa-exclamation-circle';
+    }
+    
+    document.getElementById('ssl-details-content').innerHTML = `
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Common Name</label>
+                <p class="text-sm text-gray-900">${sslInfo.common_name || 'N/A'}</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Issuer</label>
+                <p class="text-sm text-gray-900">${sslInfo.issuer || 'N/A'}</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Valid From</label>
+                <p class="text-sm text-gray-900">${new Date(sslInfo.not_before).toLocaleString()}</p>
+            </div>
+            
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Valid Until</label>
+                <div class="flex items-center space-x-2">
+                    <p class="text-sm text-gray-900">${expiryDate.toLocaleString()}</p>
+                    <span class="${expiryClass}">
+                        <i class="fas ${expiryIcon}"></i>
+                    </span>
+                </div>
+                <p class="text-xs ${expiryClass}">${daysUntilExpiry} days remaining</p>
+            </div>
+            
+            ${sslInfo.subject_alt_names && sslInfo.subject_alt_names.length > 0 ? `
+            <div>
+                <label class="block text-sm font-medium text-gray-700">Subject Alternative Names</label>
+                <div class="mt-1">
+                    ${sslInfo.subject_alt_names.map(name => `<span class="inline-block bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded mr-1 mb-1">${name}</span>`).join('')}
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+}
+
+function hideSSLModal() {
+    document.getElementById('sslModal').classList.add('hidden');
+}
+
+function checkCaddyStatus() {
+    const statusElement = document.getElementById('caddy-status');
+    if (!statusElement) return;  // No Caddy status for outbound campaigns
+
+    fetch('/api/caddy/status')
+        .then(response => response.json())
+        .then(data => {
+            if (data.running) {
+                statusElement.innerHTML = '<i class="fas fa-check-circle mr-1"></i>Running';
+                statusElement.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800';
+            } else {
+                statusElement.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i>Offline';
+                statusElement.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800';
+            }
+        })
+        .catch(error => {
+            console.error('Error checking Caddy status:', error);
+            statusElement.innerHTML = '<i class="fas fa-question-circle mr-1"></i>Unknown';
+            statusElement.className = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800';
+        });
+}
+
+function testSSLEndpoint() {
+    {% if campaign.custom_domain %}
+    const domain = '{{ campaign.custom_domain }}';
+    const port = {{ '443' if campaign.ssl_mode != 'disabled' else '80' }};
+    
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    fetch(`/api/campaigns/{{ campaign.id if campaign else 0 }}/ssl/test`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ domain, port })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.accessible) {
+            const message = `Endpoint test successful! Domain: ${domain}, Certificate: ${data.certificate_valid ? 'Valid' : 'Invalid'}, Issuer: ${data.issuer || 'Unknown'}`;
+            showToast(message, 'success');
+        } else {
+            showToast(`Endpoint test failed: ${data.error || 'Unknown error'}`, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error testing endpoint:', error);
+        showToast('Error testing SSL endpoint', 'error');
+    });
+    {% endif %}
+}
+
+// Check Caddy status on page load
+document.addEventListener('DOMContentLoaded', function() {
+    checkCaddyStatus();
+    
+    // Refresh status every 30 seconds
+    setInterval(checkCaddyStatus, 30000);
+});
+
+
+function startCampaign() {
+    updateCampaignStatus('active');
+}
+
+function pauseCampaign() {
+    updateCampaignStatus('paused');
+}
+
+function resumeCampaign() {
+    updateCampaignStatus('active');
+}
+
+async function executeCampaignSend(workflowId, workflowName) {
+    const confirmed = await showConfirm('Execute sending workflow "' + (workflowName || workflowId) + '"?', 'Send');
+    if (!confirmed) return;
+    try {
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+        const headers = { 'Content-Type': 'application/json' };
+        if (csrfToken) headers['X-CSRFToken'] = csrfToken;
+        const response = await fetch('/api/sending-workflows/' + workflowId + '/execute', {
+            method: 'POST',
+            headers: headers,
+            credentials: 'same-origin'
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+            showToast('Execution started', 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('Error: ' + (data.error || response.statusText || 'Failed to execute'), 'error');
+        }
+    } catch (error) {
+        console.error('Error executing sending workflow:', error);
+        showToast('Error executing sending workflow', 'error');
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.send-campaign-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const id = parseInt(this.getAttribute('data-send-workflow-id'), 10);
+            const name = this.getAttribute('data-send-workflow-name') || '';
+            if (id) executeCampaignSend(id, name);
+        });
+    });
+});
+
+function updateCampaignStatus(status) {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    fetch(`/campaigns/{{ campaign.id if campaign else 0 }}/toggle`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        },
+        body: JSON.stringify({ status: status })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Campaign status updated successfully', 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            let errorMessage = 'Error updating campaign status: ' + data.error;
+            if (data.validation_errors && data.validation_errors.length > 0) {
+                errorMessage += ' Validation Issues: ' + data.validation_errors.join(', ');
+            }
+            showToast(errorMessage, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error updating campaign status', 'error');
+    });
+}
+
+function deleteCampaign() {
+    document.getElementById('deleteModal').classList.remove('hidden');
+}
+
+function hideDeleteModal() {
+    document.getElementById('deleteModal').classList.add('hidden');
+}
+
+function copyToClipboard(text, buttonElement) {
+    navigator.clipboard.writeText(text).then(function() {
+        // Show a temporary success message
+        if (buttonElement) {
+            const originalIcon = buttonElement.innerHTML;
+            buttonElement.innerHTML = '<i class="fas fa-check text-green-600"></i>';
+            setTimeout(() => {
+                buttonElement.innerHTML = originalIcon;
+            }, 2000);
+        } else {
+            showToast('Copied to clipboard!', 'success', 5000, false);
+        }
+    }, function(err) {
+        console.error('Could not copy text: ', err);
+        showToast('Failed to copy to clipboard', 'error', 5000, false);
+    });
+}
+
+document.getElementById('confirmDelete').addEventListener('click', function() {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    
+    fetch(`/api/campaigns/{{ campaign.id if campaign else 0 }}`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast('Campaign deleted successfully', 'success');
+            setTimeout(() => {
+                window.location.href = '{{ url_for("admin.campaigns") }}';
+            }, 500);
+        } else {
+            showToast('Error deleting campaign: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error deleting campaign', 'error');
+    })
+    .finally(() => {
+        hideDeleteModal();
+    });
+});
+
+// Close modal when clicking outside
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideDeleteModal();
+    }
+});
+
+function togglePassword(button) {
+    const row = button.closest('tr');
+    const passwordDisplay = row.querySelector('.password-display');
+    const masked = passwordDisplay.querySelector('.password-masked');
+    const visible = passwordDisplay.querySelector('.password-visible');
+    const icon = button.querySelector('i');
+    
+    if (masked.classList.contains('hidden')) {
+        masked.classList.remove('hidden');
+        visible.classList.add('hidden');
+        icon.classList.remove('fa-eye-slash');
+        icon.classList.add('fa-eye');
+    } else {
+        masked.classList.add('hidden');
+        visible.classList.remove('hidden');
+        icon.classList.remove('fa-eye');
+        icon.classList.add('fa-eye-slash');
+    }
+}
+
+function copyCredential(value, type) {
+    if (!value || value === 'N/A') {
+        showToast('No ' + type + ' to copy', 'error', 5000, false);
+        return;
+    }
+    navigator.clipboard.writeText(value).then(function() {
+        showToast(type.charAt(0).toUpperCase() + type.slice(1) + ' copied to clipboard!', 'success', 5000, false);
+    }, function(err) {
+        console.error('Could not copy ' + type + ': ', err);
+        showToast('Failed to copy ' + type, 'error', 5000, false);
+    });
+}
+
+// Auto-refresh recent events every 30 seconds
+const CAMPAIGN_ID = {{ campaign.id }};
+
+function loadRecentEvents() {
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/events?per_page=10`)
+        .then(response => response.json())
+        .then(data => {
+            const eventsList = document.getElementById('recent-events-list');
+            const emptyDiv = document.getElementById('recent-events-empty');
+
+            if (!data.events || data.events.length === 0) {
+                if (eventsList) {
+                    eventsList.style.display = 'none';
+                }
+                if (emptyDiv) {
+                    emptyDiv.style.display = 'block';
+                    emptyDiv.replaceChildren();
+                    const p = document.createElement('p');
+                    p.className = 'text-sm text-gray-500 dark:text-gray-400';
+                    p.textContent = 'No events yet';
+                    emptyDiv.appendChild(p);
+                } else if (eventsList && eventsList.parentElement) {
+                    const parent = eventsList.parentElement;
+                    parent.replaceChildren();
+                    const wrap = document.createElement('div');
+                    wrap.id = 'recent-events-empty';
+                    wrap.className = 'text-center py-8';
+                    const p = document.createElement('p');
+                    p.className = 'text-sm text-gray-500 dark:text-gray-400';
+                    p.textContent = 'No events yet';
+                    wrap.appendChild(p);
+                    parent.appendChild(wrap);
+                }
+                return;
+            }
+
+            if (emptyDiv) {
+                emptyDiv.style.display = 'none';
+            }
+            if (!eventsList) return;
+            eventsList.style.display = 'block';
+            eventsList.replaceChildren();
+
+            data.events.forEach((event, index) => {
+                const isLast = index === data.events.length - 1;
+                const eventType = event.event_type || 'unknown';
+                let iconClass = 'fa-circle';
+                let bgColor = 'bg-gray-500';
+                let eventText = eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                if (eventType === 'page_view' || eventType === 'credentials') {
+                    iconClass = 'fa-eye';
+                    bgColor = 'bg-blue-500';
+                    eventText = 'Page viewed';
+                } else if (eventType === 'form_submit' || eventType === 'credentials') {
+                    iconClass = 'fa-paper-plane';
+                    bgColor = 'bg-red-500';
+                    eventText = 'Form submitted';
+                } else if (eventType === 'credential_captured' || eventType === 'credentials') {
+                    iconClass = 'fa-key';
+                    bgColor = 'bg-orange-500';
+                    eventText = 'Credentials captured';
+                }
+
+                const eventTime = event.created_at ? new Date(event.created_at).toLocaleString('en-US', {
+                    month: 'short',
+                    day: 'numeric',
+                    hour: 'numeric',
+                    minute: '2-digit',
+                    hour12: true
+                }) : 'Unknown';
+
+                const eventData = event.data ? (typeof event.data === 'string' ? event.data.substring(0, 100) : JSON.stringify(event.data).substring(0, 100)) : '';
+
+                const li = document.createElement('li');
+                const wrap = document.createElement('div');
+                wrap.className = 'relative pb-8';
+
+                if (!isLast) {
+                    const rail = document.createElement('span');
+                    rail.className = 'absolute top-4 left-4 -ml-px h-full w-0.5 bg-gray-200 dark:bg-gray-700';
+                    rail.setAttribute('aria-hidden', 'true');
+                    wrap.appendChild(rail);
+                }
+
+                const row = document.createElement('div');
+                row.className = 'relative flex space-x-3';
+
+                const iconWrap = document.createElement('div');
+                const iconBadge = document.createElement('span');
+                iconBadge.className = `h-8 w-8 rounded-full flex items-center justify-center ring-8 ring-white dark:ring-gray-800 ${bgColor}`;
+                const iconEl = document.createElement('i');
+                iconEl.className = `fas ${iconClass} text-white text-xs`;
+                iconBadge.appendChild(iconEl);
+                iconWrap.appendChild(iconBadge);
+
+                const body = document.createElement('div');
+                body.className = 'min-w-0 flex-1 pt-1.5 flex justify-between space-x-4';
+
+                const leftCol = document.createElement('div');
+                const summary = document.createElement('p');
+                summary.className = 'text-sm text-gray-500 dark:text-gray-400';
+                summary.appendChild(document.createTextNode(eventText));
+                if (event.ip_address) {
+                    summary.appendChild(document.createTextNode(' from '));
+                    const ip = document.createElement('span');
+                    ip.className = 'font-medium';
+                    ip.textContent = event.ip_address;
+                    summary.appendChild(ip);
+                }
+                leftCol.appendChild(summary);
+
+                if (eventData) {
+                    const dataLine = document.createElement('p');
+                    dataLine.className = 'text-xs text-gray-400 dark:text-gray-500 mt-1';
+                    dataLine.textContent = eventData;
+                    leftCol.appendChild(dataLine);
+                }
+
+                const rightCol = document.createElement('div');
+                rightCol.className = 'text-right text-sm whitespace-nowrap text-gray-500 dark:text-gray-400';
+                rightCol.textContent = eventTime;
+
+                body.append(leftCol, rightCol);
+                row.append(iconWrap, body);
+                wrap.appendChild(row);
+                li.appendChild(wrap);
+                eventsList.appendChild(li);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading recent events:', error);
+        });
+}
+
+// Helper function to escape HTML
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Load credentials from API
+function loadCredentials() {
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/events?event_type=credentials&per_page=50`)
+        .then(response => response.json())
+        .then(data => {
+            const tableBody = document.getElementById('credentials-table-body');
+            const emptyState = document.getElementById('credentials-empty-state');
+            const headerCount = document.getElementById('credentials-count');
+            const tableContainer = document.getElementById('credentials-table-container');
+            
+            if (!data.events || data.events.length === 0) {
+                // Show empty state
+                if (tableBody) tableBody.innerHTML = '';
+                if (emptyState) emptyState.style.display = 'block';
+                if (tableContainer) tableContainer.style.display = 'none';
+                if (headerCount) headerCount.textContent = '0';
+                return;
+            }
+            
+            // Hide empty state, show table
+            if (emptyState) emptyState.style.display = 'none';
+            if (tableContainer) tableContainer.style.display = 'block';
+            if (headerCount) headerCount.textContent = data.events.length;
+            
+            if (!tableBody) return;
+            tableBody.replaceChildren();
+
+            data.events.forEach((event) => {
+                const creds = event.data?.credentials || {};
+                const username = creds.username || creds.email || 'N/A';
+                const password = creds.password || '';
+                const ipAddress = event.ip_address || 'N/A';
+                const timestamp = event.created_at ?
+                    new Date(event.created_at).toLocaleString('en-US', {
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: false
+                    }).replace(',', '') : 'Unknown';
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50 dark:hover:bg-gray-700';
+
+                // Username
+                const userTd = document.createElement('td');
+                userTd.className = 'px-6 py-4 whitespace-nowrap';
+                const userDiv = document.createElement('div');
+                userDiv.className = 'text-sm font-medium text-gray-900 dark:text-white';
+                userDiv.textContent = username;
+                userTd.appendChild(userDiv);
+
+                // Password (masked + visible + toggle)
+                const pwTd = document.createElement('td');
+                pwTd.className = 'px-6 py-4 whitespace-nowrap';
+                const pwWrap = document.createElement('div');
+                pwWrap.className = 'text-sm text-gray-900 dark:text-white';
+
+                const pwDisplay = document.createElement('span');
+                pwDisplay.className = 'password-display';
+                const pwMasked = document.createElement('span');
+                pwMasked.className = 'password-masked';
+                pwMasked.textContent = '••••••••';
+                const pwVisible = document.createElement('span');
+                pwVisible.className = 'password-visible hidden';
+                pwVisible.textContent = password;  // textContent: never parsed as HTML
+                pwDisplay.append(pwMasked, pwVisible);
+
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'ml-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs';
+                toggleBtn.addEventListener('click', () => togglePassword(toggleBtn));
+                const toggleIcon = document.createElement('i');
+                toggleIcon.className = 'fas fa-eye';
+                toggleBtn.appendChild(toggleIcon);
+
+                pwWrap.append(pwDisplay, toggleBtn);
+                pwTd.appendChild(pwWrap);
+
+                // IP
+                const ipTd = document.createElement('td');
+                ipTd.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400';
+                ipTd.textContent = ipAddress;
+
+                // Timestamp
+                const tsTd = document.createElement('td');
+                tsTd.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400';
+                tsTd.textContent = timestamp;
+
+                // Actions — captured-variable closures avoid string-built onclick
+                const actionsTd = document.createElement('td');
+                actionsTd.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
+
+                const copyUserBtn = document.createElement('button');
+                copyUserBtn.className = 'text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-3';
+                copyUserBtn.title = 'Copy username';
+                copyUserBtn.addEventListener('click', () => copyCredential(username, 'username'));
+                const copyUserIcon = document.createElement('i');
+                copyUserIcon.className = 'fas fa-copy';
+                copyUserBtn.appendChild(copyUserIcon);
+
+                const copyPwBtn = document.createElement('button');
+                copyPwBtn.className = 'text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300';
+                copyPwBtn.title = 'Copy password';
+                copyPwBtn.addEventListener('click', () => copyCredential(password, 'password'));
+                const copyPwIcon = document.createElement('i');
+                copyPwIcon.className = 'fas fa-copy';
+                copyPwBtn.appendChild(copyPwIcon);
+
+                actionsTd.append(copyUserBtn, copyPwBtn);
+
+                tr.append(userTd, pwTd, ipTd, tsTd, actionsTd);
+                tableBody.appendChild(tr);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading credentials:', error);
+        });
+}
+
+// Load events on page load and set up auto-refresh
+document.addEventListener('DOMContentLoaded', function() {
+    loadRecentEvents();
+    loadCredentials();
+    // Auto-refresh every 30 seconds
+    setInterval(loadRecentEvents, 30000);
+    setInterval(loadCredentials, 30000);
+});
+</script>
+{% endblock %}

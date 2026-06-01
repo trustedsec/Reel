@@ -1,0 +1,4 @@
+{
+	# Global options - enable admin API on localhost only
+	admin localhost:2019
+}

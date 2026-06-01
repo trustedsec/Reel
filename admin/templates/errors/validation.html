@@ -1,0 +1,27 @@
+{% extends "errors/base_error.html" %}
+
+{% block title %}Validation Error{% endblock %}
+
+{% block icon_bg %}bg-yellow-100{% endblock %}
+{% block icon %}fas fa-exclamation-circle text-yellow-600{% endblock %}
+
+{% block error_title %}Validation Error{% endblock %}
+{% block error_message %}The information you provided is invalid.{% endblock %}
+
+{% block error_details %}
+{% if errors %}
+<div class="text-sm text-left mb-4">
+    <p class="font-medium text-gray-700 mb-2">Please fix the following issues:</p>
+    <ul class="list-disc list-inside space-y-1 text-gray-600">
+    {% for error in errors %}
+        <li>
+            {% if error.field %}
+                <span class="font-medium">{{ error.field }}:</span> 
+            {% endif %}
+            {{ error.message }}
+        </li>
+    {% endfor %}
+    </ul>
+</div>
+{% endif %}
+{% endblock %}

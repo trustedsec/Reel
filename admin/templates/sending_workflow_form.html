@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Sending Workflow - Reel v2{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold dark:text-white">Edit Sending Workflow</h1>
+        <a href="{{ url_for('admin.sending_workflows') }}" 
+           class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+            Back to Sending Workflows
+        </a>
+    </div>
+
+    {% if sending_workflow and not sending_workflow.workflow_id %}
+    <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-6">
+        <p class="text-amber-800 dark:text-amber-200 mb-4">
+            This sending workflow was created with the old form and has no workflow graph. Create a new sending workflow from the Workflow builder (New Sending Workflow).
+        </p>
+        <div class="flex gap-2">
+            <a href="{{ url_for('admin.new_workflow', type='sending') }}" 
+               class="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700">
+                New Sending Workflow (Workflow builder)
+            </a>
+            <a href="{{ url_for('admin.sending_workflows') }}" 
+               class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                Back to Sending Workflows
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <div x-data="sendingWorkflowForm()" x-init="init()">
+        <form @submit.prevent="saveWorkflow()" class="space-y-6">
+            <!-- Basic Information (run-config only) -->
+            <div class="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+                <h2 class="text-xl font-bold mb-4 dark:text-white">Basic Information</h2>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 dark:text-gray-300">Name *</label>
+                        <input type="text" x-model="workflow.name" required
+                               class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-2 dark:text-gray-300">Campaign *</label>
+                        <select x-model="workflow.campaign_id" required
+                                class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="">Select outbound campaign</option>
+                            <template x-for="campaign in campaigns" :key="campaign.id">
+                                <option :value="campaign.id" x-text="campaign.name"></option>
+                            </template>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Only outbound campaigns are listed.</p>
+                    </div>
+                </div>
+                <div class="mt-4 flex items-center gap-2" x-show="workflow.workflow_id">
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Workflow graph:</span>
+                    <a :href="'/workflows/' + workflow.workflow_id" target="_blank" rel="noopener"
+                       class="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700">
+                        Edit workflow graph
+                    </a>
+                </div>
+                <div class="mt-4">
+                    <label class="block text-sm font-medium mb-2 dark:text-gray-300">Description</label>
+                    <textarea x-model="workflow.description" rows="3"
+                              class="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"></textarea>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-2">
+                <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                    Update Workflow
+                </button>
+                <button type="button" @click="testWorkflow()" 
+                        x-show="workflowId"
+                        class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
+                    Test (Dry Run)
+                </button>
+                <a href="{{ url_for('admin.sending_workflows') }}" 
+                   class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">
+                    Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function sendingWorkflowForm() {
+    return {
+        workflowId: {% if sending_workflow %}{{ sending_workflow.id }}{% else %}null{% endif %},
+        campaigns: [],
+        workflow: {
+            name: {% if sending_workflow %}{{ sending_workflow.name|tojson }}{% else %}''{% endif %},
+            description: {% if sending_workflow %}{{ sending_workflow.description|tojson }}{% else %}''{% endif %},
+            campaign_id: {% if sending_workflow %}{{ sending_workflow.campaign_id }}{% else %}null{% endif %},
+            workflow_id: {% if sending_workflow and sending_workflow.workflow_id %}{{ sending_workflow.workflow_id }}{% else %}null{% endif %}
+        },
+        
+        async init() {
+            await this.loadCampaigns();
+        },
+        
+        async loadCampaigns() {
+            try {
+                const response = await fetch('/api/campaigns?per_page=1000&campaign_type=outbound');
+                const data = await response.json();
+                this.campaigns = data.campaigns || [];
+            } catch (error) {
+                console.error('Error loading campaigns:', error);
+            }
+        },
+        
+        async saveWorkflow() {
+            if (!this.workflow.name.trim()) {
+                showToast('Name is required', 'error');
+                return;
+            }
+            if (!this.workflow.campaign_id) {
+                showToast('Campaign is required', 'error');
+                return;
+            }
+            if (this.workflowId && !this.workflow.workflow_id) {
+                showToast('This workflow has no graph; save is not allowed.', 'error');
+                return;
+            }
+            
+            try {
+                const url = `/api/sending-workflows/${this.workflowId}`;
+                const payload = {
+                    name: this.workflow.name,
+                    description: this.workflow.description || '',
+                    campaign_id: this.workflow.campaign_id
+                };
+                
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    showToast('Workflow saved successfully!', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/sending-workflows';
+                    }, 500);
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to save workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error saving workflow:', error);
+                showToast('Error saving workflow', 'error');
+            }
+        },
+        
+        async testWorkflow() {
+            if (!this.workflowId) {
+                showToast('Please save the workflow first', 'warning');
+                return;
+            }
+            
+            const confirmed = await showConfirm('Run a dry-run test of this workflow? (No emails will be sent)', 'Test Workflow');
+            if (!confirmed) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/sending-workflows/${this.workflowId}/execute`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ dry_run: true })
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    showToast(`Test completed! Total: ${result.total}, Sent: ${result.sent}, Failed: ${result.failed}`, 'success');
+                } else {
+                    const error = await response.json();
+                    showToast('Error: ' + (error.error || 'Failed to test workflow'), 'error');
+                }
+            } catch (error) {
+                console.error('Error testing workflow:', error);
+                showToast('Error testing workflow', 'error');
+            }
+        }
+    };
+}
+</script>
+{% endblock %}

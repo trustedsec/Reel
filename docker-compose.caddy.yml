@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  caddy:
+    image: caddy:latest
+    container_name: caddy-reel-test
+    ports:
+      - "80:80"      # HTTP
+      - "443:443"    # HTTPS  
+      - "2019:2019"  # Admin API
+    volumes:
+      - ./storage/caddy/data:/data
+      - ./storage/caddy/config:/config
+      # Mount minimal Caddyfile that enables admin API on all interfaces
+      - ./Caddyfile.minimal:/etc/caddy/Caddyfile:ro
+    # Use command to run Caddy with the Caddyfile
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    restart: unless-stopped
+    networks:
+      - reel-network
+
+networks:
+  reel-network:
+    driver: bridge

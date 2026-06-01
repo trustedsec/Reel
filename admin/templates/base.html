@@ -1,0 +1,1760 @@
+<!DOCTYPE html>
+<html lang="en" x-data="darkModeData()" x-init="init()" :class="{ 'dark': darkMode }">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+        <title>{% block title %}Reel v2 Admin{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('admin.favicon') }}">
+    <script>
+        // Apply the dark class before Tailwind paints, matching darkModeData()'s
+        // default (dark when localStorage is 'true' or unset). Prevents the
+        // light-theme flash that happened while Alpine bound :class on <html>.
+        (function () {
+            var dm = localStorage.getItem('darkMode');
+            if (dm === null || dm === 'true') {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configure Tailwind to enable dark mode
+        tailwind.config = {
+            darkMode: 'class',
+        };
+        // Redirect to login when API calls return 401 (session expired / logged out)
+        (function() {
+            var origFetch = window.fetch;
+            window.fetch = function() {
+                return origFetch.apply(this, arguments).then(function(response) {
+                    if (response.status === 401) {
+                        var next = encodeURIComponent(window.location.pathname + window.location.search);
+                        window.location.href = '/login' + (next ? '?next=' + next : '');
+                        return response;
+                    }
+                    return response;
+                });
+            };
+        })();
+    </script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    
+    <!-- Dark mode styles -->
+    <style>
+        /* Hide x-cloak elements until Alpine boots. Prevents modals/overlays
+           from flashing visible before x-show binds. */
+        [x-cloak] { display: none !important; }
+
+        /* Custom scrollbar for dark mode */
+        .dark ::-webkit-scrollbar {
+            width: 8px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #374151;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #6b7280;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #9ca3af;
+        }
+        
+        /* Toast notification styles */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            max-width: 400px;
+        }
+        
+        .toast {
+            animation: slideInRight 0.3s ease-out;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .toast.fade-out {
+            animation: fadeOut 0.3s ease-out forwards;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        /* Tooltip/Popover styles */
+        .tooltip-popover {
+            position: absolute;
+            z-index: 10002;
+            max-width: 400px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            padding: 16px;
+            font-size: 14px;
+            line-height: 1.5;
+            white-space: pre-line;
+            word-wrap: break-word;
+        }
+        
+        .dark .tooltip-popover {
+            background: #1f2937;
+            border-color: #374151;
+            color: #f3f4f6;
+        }
+        
+        .tooltip-popover::before {
+            content: '';
+            position: absolute;
+            width: 0;
+            height: 0;
+            border: 8px solid transparent;
+        }
+        
+        .tooltip-popover.top::before {
+            bottom: -16px;
+            left: 20px;
+            border-top-color: #e5e7eb;
+        }
+        
+        .dark .tooltip-popover.top::before {
+            border-top-color: #374151;
+        }
+        
+        .tooltip-popover.bottom::before {
+            top: -16px;
+            left: 20px;
+            border-bottom-color: #e5e7eb;
+        }
+        
+        .dark .tooltip-popover.bottom::before {
+            border-bottom-color: #374151;
+        }
+        
+        .tooltip-close {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            cursor: pointer;
+            color: #6b7280;
+            font-size: 16px;
+            line-height: 1;
+            padding: 4px;
+        }
+        
+        .tooltip-close:hover {
+            color: #374151;
+        }
+        
+        .dark .tooltip-close:hover {
+            color: #9ca3af;
+        }
+        
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(100%);
+            }
+        }
+        
+        /* Notification dropdown styles - Neobrutalism design */
+        .notification-dropdown {
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+        
+        .notification-dropdown .notification-item {
+            transition: all 0.2s ease;
+        }
+        
+        .notification-dropdown .notification-item:hover {
+            /* Hover uses Tailwind bg only; no shadow/transform */
+        }
+        
+        /* Badge animation */
+        @keyframes pulse-badge {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.1);
+            }
+        }
+        
+        .notification-badge {
+            animation: pulse-badge 2s ease-in-out infinite;
+        }
+    </style>
+    
+    <!-- Extra CSS block for child templates -->
+    {% block extra_css %}{% endblock %}
+    
+    <!-- Extra head block for child templates (scripts that need to load before Alpine) -->
+    {% block extra_head %}{% endblock %}
+    
+    <!-- Alpine.js loads last so our functions are defined first -->
+    <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+    
+    <script>
+        // Alpine.js dark mode component
+        function darkModeData() {
+            return {
+                darkMode: localStorage.getItem('darkMode') === 'true' || localStorage.getItem('darkMode') === null,
+                
+                init() {
+                    // Set default to dark mode if not set
+                    if (localStorage.getItem('darkMode') === null) {
+                        localStorage.setItem('darkMode', 'true');
+                        this.darkMode = true;
+                    }
+                },
+                
+                toggleDarkMode() {
+                    this.darkMode = !this.darkMode;
+                    localStorage.setItem('darkMode', this.darkMode.toString());
+                }
+            }
+        }
+        
+        // Alpine.js user menu dropdown component
+        function userMenuDropdown() {
+            return {
+                isOpen: false,
+                
+                toggleDropdown() {
+                    this.isOpen = !this.isOpen;
+                },
+                
+                closeDropdown() {
+                    this.isOpen = false;
+                },
+                
+                openPasswordChangeModal() {
+                    this.closeDropdown();
+                    // Trigger password change modal
+                    if (window.passwordChangeModalData) {
+                        window.passwordChangeModalData.showModal = true;
+                    } else {
+                        // Fallback: try to find and show the modal directly
+                        const modal = document.getElementById('password-change-modal');
+                        if (modal) {
+                            modal.classList.remove('hidden');
+                            modal.style.display = 'flex';
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Alpine.js notification dropdown component
+        function notificationDropdown() {
+            return {
+                isOpen: false,
+                notifications: [],
+                loading: false,
+                unreadCount: 0,
+                refreshInterval: null,
+                
+                init() {
+                    // Load unread count from localStorage cache
+                    const cachedCount = localStorage.getItem('notification_unread_count');
+                    if (cachedCount !== null) {
+                        this.unreadCount = parseInt(cachedCount, 10);
+                    }
+                    
+                    // Load notifications and unread count
+                    this.loadUnreadCount();
+                    this.startAutoRefresh();
+                },
+                
+                toggleDropdown() {
+                    this.isOpen = !this.isOpen;
+                    if (this.isOpen) {
+                        this.loadNotifications();
+                    }
+                },
+                
+                closeDropdown() {
+                    this.isOpen = false;
+                },
+                
+                async loadNotifications() {
+                    this.loading = true;
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch('/api/notifications?per_page=50', {
+                            headers: {
+                                'X-CSRFToken': csrfToken || ''
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.notifications = data.notifications || [];
+                            
+                            // Cache recent notifications
+                            localStorage.setItem('notification_cache', JSON.stringify(this.notifications));
+                            localStorage.setItem('notification_cache_time', Date.now().toString());
+                        }
+                    } catch (error) {
+                        console.error('Error loading notifications:', error);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                async loadUnreadCount() {
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch('/api/notifications/unread-count', {
+                            headers: {
+                                'X-CSRFToken': csrfToken || ''
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            const data = await response.json();
+                            this.unreadCount = data.count || 0;
+                            localStorage.setItem('notification_unread_count', this.unreadCount.toString());
+                        }
+                    } catch (error) {
+                        console.error('Error loading unread count:', error);
+                    }
+                },
+                
+                async markAsRead(notificationId) {
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch(`/api/notifications/${notificationId}/read`, {
+                            method: 'PUT',
+                            headers: {
+                                'X-CSRFToken': csrfToken || '',
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            // Update local state
+                            const notification = this.notifications.find(n => n.id === notificationId);
+                            if (notification) {
+                                notification.is_read = true;
+                                notification.read_at = new Date().toISOString();
+                            }
+                            
+                            // Update unread count
+                            if (this.unreadCount > 0) {
+                                this.unreadCount--;
+                                localStorage.setItem('notification_unread_count', this.unreadCount.toString());
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error marking notification as read:', error);
+                    }
+                },
+                
+                async markAllRead() {
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch('/api/notifications/read-all', {
+                            method: 'PUT',
+                            headers: {
+                                'X-CSRFToken': csrfToken || '',
+                                'Content-Type': 'application/json'
+                            }
+                        });
+                        
+                        if (response.ok) {
+                            // Update all notifications to read
+                            this.notifications.forEach(n => {
+                                n.is_read = true;
+                                n.read_at = new Date().toISOString();
+                            });
+                            
+                            // Reset unread count
+                            this.unreadCount = 0;
+                            localStorage.setItem('notification_unread_count', '0');
+                        }
+                    } catch (error) {
+                        console.error('Error marking all as read:', error);
+                    }
+                },
+                
+                startAutoRefresh() {
+                    // Refresh unread count every 30 seconds
+                    this.refreshInterval = setInterval(() => {
+                        this.loadUnreadCount();
+                    }, 30000);
+                    
+                    // Also listen for custom events when new notifications are created
+                    window.addEventListener('notification-created', () => {
+                        this.loadUnreadCount();
+                    });
+                },
+                
+                get groupedNotifications() {
+                    const groups = {};
+                    const now = new Date();
+                    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    const yesterday = new Date(today);
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    
+                    this.notifications.forEach(notification => {
+                        const notifDate = new Date(notification.created_at);
+                        let groupKey = 'Older';
+                        
+                        if (notifDate >= today) {
+                            groupKey = 'Today';
+                        } else if (notifDate >= yesterday) {
+                            groupKey = 'Yesterday';
+                        }
+                        
+                        if (!groups[groupKey]) {
+                            groups[groupKey] = [];
+                        }
+                        groups[groupKey].push(notification);
+                    });
+                    
+                    // Convert to array and sort by date (Today, Yesterday, Older)
+                    const order = ['Today', 'Yesterday', 'Older'];
+                    return order.filter(key => groups[key]).map(key => ({
+                        date: key,
+                        items: groups[key]
+                    }));
+                },
+                
+                formatTime(isoString) {
+                    const date = new Date(isoString);
+                    const now = new Date();
+                    const diffMs = now - date;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    const diffHours = Math.floor(diffMs / 3600000);
+                    const diffDays = Math.floor(diffMs / 86400000);
+                    
+                    if (diffMins < 1) return 'Just now';
+                    if (diffMins < 60) return `${diffMins}m ago`;
+                    if (diffHours < 24) return `${diffHours}h ago`;
+                    if (diffDays < 7) return `${diffDays}d ago`;
+                    
+                    return date.toLocaleDateString();
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 transition-colors duration-200"
+      {% if current_user.is_authenticated and current_user.password_reset_required %}
+      data-user-password-reset="true"
+      {% endif %}>
+    <!-- Navigation -->
+    <nav class="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 transition-colors duration-200">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <h1 class="text-xl font-bold text-gray-900 dark:text-white">
+                            <i class="fas fa-fish text-blue-600 dark:text-blue-400"></i> Reel v2
+                        </h1>
+                    </div>
+                    {% if current_user.is_authenticated %}
+                    <div class="hidden sm:ml-6 sm:flex sm:space-x-4">
+                        <a href="{{ url_for('admin.dashboard') }}" 
+                           class="{% if request.endpoint == 'admin.dashboard' %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-tachometer-alt mr-1.5"></i> Dashboard
+                        </a>
+                        <a href="{{ url_for('admin.campaigns') }}" 
+                           class="{% if 'campaign' in request.endpoint %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-bullseye mr-1.5"></i> Campaigns
+                        </a>
+                        <a href="{{ url_for('admin.templates') }}" 
+                           class="{% if request.endpoint == 'admin.templates' %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-file-code mr-1.5"></i> Templates
+                        </a>
+                        <a href="{{ url_for('admin.workflows') }}" 
+                           class="{% if 'workflow' in request.endpoint %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-project-diagram mr-1.5"></i> Workflows
+                        </a>
+                        {% if current_user.is_admin %}
+                        <a href="{{ url_for('admin.caddy_config') }}" 
+                           class="{% if 'caddy' in request.endpoint %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-server mr-1.5"></i> Caddy
+                        </a>
+                        {% endif %}
+                        <a href="{{ url_for('admin.plugins') }}" 
+                           class="{% if request.endpoint == 'admin.plugins' %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-puzzle-piece mr-1.5"></i> Plugins
+                        </a>
+                        <a href="{{ url_for('admin.mms_templates') }}"
+                           class="{% if request.endpoint == 'admin.mms_templates' %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-image mr-1.5"></i> MMS Cards
+                        </a>
+                        <a href="{{ url_for('admin.settings') }}"
+                           class="{% if request.endpoint == 'admin.settings' %}border-blue-500 text-gray-900 dark:text-white{% else %}border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500{% endif %} inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-cog mr-1.5"></i> Settings
+                        </a>
+                        <a href="/api-docs" target="_blank"
+                           class="border-transparent text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:border-gray-300 dark:hover:border-gray-500 inline-flex items-center px-2 pt-1 border-b-2 text-sm font-medium transition-colors duration-200">
+                            <i class="fas fa-book mr-1.5"></i> API
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="flex items-center space-x-3">
+                    <!-- Dark mode toggle -->
+                    <button @click="toggleDarkMode()" 
+                            class="p-2 rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+                            :title="darkMode ? 'Switch to light mode' : 'Switch to dark mode'">
+                        <i class="fas fa-sun" x-show="darkMode" x-transition></i>
+                        <i class="fas fa-moon" x-show="!darkMode" x-transition></i>
+                    </button>
+                    
+                    {% if current_user.is_authenticated %}
+                    <!-- Notifications -->
+                    <div x-data="notificationDropdown()" class="relative">
+                        <button @click="toggleDropdown()" 
+                                class="relative p-2 rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
+                                :title="unreadCount > 0 ? `${unreadCount} unread notifications` : 'No notifications'">
+                            <i class="fas fa-bell text-lg"></i>
+                            <span x-show="unreadCount > 0" 
+                                  x-text="unreadCount > 99 ? '99+' : unreadCount"
+                                  class="notification-badge absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center border-2 border-white dark:border-gray-800"
+                                  x-transition></span>
+                        </button>
+                        
+                        <!-- Notification Dropdown -->
+                        <div x-show="isOpen"
+                             x-cloak
+                             @click.away="closeDropdown()"
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             class="notification-dropdown absolute right-0 mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm z-50 max-h-96 overflow-hidden flex flex-col">
+                            <!-- Header -->
+                            <div class="p-4 border-b border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/80">
+                                <div class="flex items-center justify-between">
+                                    <h3 class="font-bold text-black dark:text-white">Notifications</h3>
+                                    <button @click="markAllRead()" 
+                                            x-show="unreadCount > 0"
+                                            class="text-xs font-bold text-black dark:text-white hover:underline">
+                                        Mark all read
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Notifications List -->
+                            <div class="overflow-y-auto flex-1" x-show="!loading">
+                                <template x-if="notifications.length === 0">
+                                    <div class="p-8 text-center text-gray-500 dark:text-gray-400">
+                                        <i class="fas fa-bell-slash text-3xl mb-2"></i>
+                                        <p class="text-sm">No notifications</p>
+                                    </div>
+                                </template>
+                                
+                                <template x-for="(group, groupIndex) in groupedNotifications" :key="groupIndex">
+                                    <div>
+                                        <div class="px-4 py-2 bg-gray-100 dark:bg-gray-700 font-bold text-xs text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-gray-600">
+                                            <span x-text="group.date"></span>
+                                        </div>
+                                        <template x-for="notification in group.items" :key="notification.id">
+                                            <div @click="markAsRead(notification.id)"
+                                                 :class="{
+                                                     'bg-blue-50 dark:bg-blue-900/20 border-l-4 border-l-blue-500': !notification.is_read,
+                                                     'bg-white dark:bg-gray-800': notification.is_read
+                                                 }"
+                                                 class="notification-item p-4 border-b border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-all">
+                                                <div class="flex items-start">
+                                                    <div class="flex-shrink-0 mr-3">
+                                                        <i :class="{
+                                                            'fa-check-circle text-green-500': notification.type === 'success',
+                                                            'fa-exclamation-circle text-red-500': notification.type === 'error',
+                                                            'fa-exclamation-triangle text-yellow-500': notification.type === 'warning',
+                                                            'fa-info-circle text-blue-500': notification.type === 'info'
+                                                        }"
+                                                        class="fas text-lg"></i>
+                                                    </div>
+                                                    <div class="flex-1 min-w-0">
+                                                        <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="notification.message"></p>
+                                                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1" x-text="formatTime(notification.created_at)"></p>
+                                                    </div>
+                                                    <div x-show="!notification.is_read" class="flex-shrink-0 ml-2">
+                                                        <span class="h-2 w-2 bg-blue-500 rounded-full"></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+                            
+                            <!-- Loading State -->
+                            <div x-show="loading" class="p-8 text-center text-gray-500 dark:text-gray-400">
+                                <i class="fas fa-spinner fa-spin text-2xl"></i>
+                                <p class="text-sm mt-2">Loading...</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- User Menu Dropdown -->
+                    <div x-data="userMenuDropdown()" class="relative">
+                        <button @click="toggleDropdown()" 
+                                class="flex items-center space-x-2 p-2 rounded-md text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
+                            <i class="fas fa-user text-sm"></i>
+                            <span class="text-xs font-medium">{{ current_user.username }}</span>
+                            <i class="fas fa-chevron-down text-xs" :class="{ 'rotate-180': isOpen }"></i>
+                        </button>
+                        
+                        <!-- User Dropdown Menu -->
+                        <div x-show="isOpen"
+                             x-cloak
+                             @click.away="closeDropdown()"
+                             x-transition:enter="transition ease-out duration-100"
+                             x-transition:enter-start="opacity-0 scale-95"
+                             x-transition:enter-end="opacity-100 scale-100"
+                             x-transition:leave="transition ease-in duration-75"
+                             x-transition:leave-start="opacity-100 scale-100"
+                             x-transition:leave-end="opacity-0 scale-95"
+                             class="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 border-2 border-black dark:border-gray-600 rounded-none shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.3)] z-50">
+                            <div class="p-2">
+                                <div class="px-3 py-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b-2 border-gray-200 dark:border-gray-600 mb-2">
+                                    {{ current_user.username }}
+                                </div>
+                                <button @click="openPasswordChangeModal()" 
+                                        class="w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-none transition-colors">
+                                    <i class="fas fa-key mr-2"></i>
+                                    Change Password
+                                </button>
+                                <a href="{{ url_for('admin.logout') }}" 
+                                   class="block w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-none transition-colors">
+                                    <i class="fas fa-sign-out-alt mr-2"></i>
+                                    Logout
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+                {% for category, message in messages %}
+                    <div class="rounded-md {% if category == 'error' %}bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800{% else %}bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800{% endif %} p-4 mb-4 transition-colors duration-200">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                <i class="{% if category == 'error' %}fas fa-exclamation-circle text-red-400 dark:text-red-300{% else %}fas fa-check-circle text-green-400 dark:text-green-300{% endif %}"></i>
+                            </div>
+                            <div class="ml-3">
+                                <p class="text-sm {% if category == 'error' %}text-red-800 dark:text-red-200{% else %}text-green-800 dark:text-green-200{% endif %}">{{ message }}</p>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 mt-12 transition-colors duration-200">
+        <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
+            <p class="text-center text-sm text-gray-500 dark:text-gray-400">
+                Reel v2.0.0 - <span id="footer-tagline">Modern Phishing Framework</span>
+            </p>
+        </div>
+    </footer>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Password Reset Required Modal -->
+    <div id="password-reset-modal" 
+         x-data="passwordResetModal()"
+         x-show="showModal"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-75 overflow-y-auto h-full w-full z-[10002] flex items-center justify-center"
+         style="display: none;">
+        <div class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md max-w-md w-full mx-4 p-6">
+            <div class="mb-4">
+                <h2 class="text-2xl font-bold text-black dark:text-white mb-2">
+                    <i class="fas fa-key mr-2 text-cyan-500 dark:text-cyan-400"></i>
+                    Password Reset Required
+                </h2>
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    You must change your password before continuing.
+                </p>
+            </div>
+            
+            <!-- Password Requirements -->
+            <div class="mb-4 p-3 bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-md">
+                <p class="text-xs font-bold text-black dark:text-white mb-2">Password Requirements:</p>
+                <ul class="text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.length, 'text-gray-500': !requirements.length}">
+                        <i :class="requirements.length ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        At least 8 characters
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.uppercase, 'text-gray-500': !requirements.uppercase}">
+                        <i :class="requirements.uppercase ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One uppercase letter
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.lowercase, 'text-gray-500': !requirements.lowercase}">
+                        <i :class="requirements.lowercase ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One lowercase letter
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.number, 'text-gray-500': !requirements.number}">
+                        <i :class="requirements.number ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One number
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.special, 'text-gray-500': !requirements.special}">
+                        <i :class="requirements.special ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Form -->
+            <form @submit.prevent="submitPasswordChange()" class="space-y-4">
+                <!-- Current Password -->
+                <div>
+                    <label for="current-password" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        Current Password
+                    </label>
+                    <input type="password" 
+                           id="current-password"
+                           x-model="formData.currentPassword"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Enter current password">
+                </div>
+                
+                <!-- New Password -->
+                <div>
+                    <label for="new-password" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        New Password
+                    </label>
+                    <input type="password" 
+                           id="new-password"
+                           x-model="formData.newPassword"
+                           @input="validatePassword()"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Enter new password">
+                    <p x-show="validationErrors.length > 0" class="text-xs text-red-600 dark:text-red-400 mt-1">
+                        <span x-text="validationErrors.join(', ')"></span>
+                    </p>
+                </div>
+                
+                <!-- Confirm Password -->
+                <div>
+                    <label for="confirm-password" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        Confirm Password
+                    </label>
+                    <input type="password" 
+                           id="confirm-password"
+                           x-model="formData.confirmPassword"
+                           @input="validatePassword()"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Confirm new password">
+                    <p x-show="formData.confirmPassword && formData.newPassword !== formData.confirmPassword" 
+                       class="text-xs text-red-600 dark:text-red-400 mt-1">
+                        Passwords do not match
+                    </p>
+                </div>
+                
+                <!-- Error Message -->
+                <div x-show="errorMessage" 
+                     class="p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-md">
+                    <p class="text-sm text-red-800 dark:text-red-200" x-text="errorMessage"></p>
+                </div>
+                
+                <!-- Submit Button -->
+                <button type="submit"
+                        :disabled="!isFormValid || loading"
+                        :class="{
+                            'bg-cyan-400 dark:bg-cyan-500 hover:bg-cyan-300 dark:hover:bg-cyan-400': isFormValid && !loading,
+                            'bg-gray-300 dark:bg-gray-600 cursor-not-allowed': !isFormValid || loading
+                        }"
+                        class="w-full px-6 py-3 border border-gray-300 dark:border-gray-600 font-bold text-black dark:text-white rounded-md transition-all disabled:opacity-50">
+                    <span x-show="!loading">Change Password</span>
+                    <span x-show="loading">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Changing Password...
+                    </span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Password Change Modal (for user menu) -->
+    <div id="password-change-modal" 
+         x-data="passwordChangeModal()"
+         x-show="showModal"
+         x-cloak
+         class="fixed inset-0 bg-black bg-opacity-75 overflow-y-auto h-full w-full z-[10003] flex items-center justify-center"
+         style="display: none;">
+        <div class="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md max-w-md w-full mx-4 p-6">
+            <div class="mb-4 flex items-center justify-between">
+                <h2 class="text-2xl font-bold text-black dark:text-white">
+                    <i class="fas fa-key mr-2 text-cyan-500 dark:text-cyan-400"></i>
+                    Change Password
+                </h2>
+                <button @click="closeModal()" 
+                        class="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            
+            <!-- Password Requirements -->
+            <div class="mb-4 p-3 bg-gray-100 dark:bg-gray-700/50 border border-gray-300 dark:border-gray-600 rounded-md">
+                <p class="text-xs font-bold text-black dark:text-white mb-2">Password Requirements:</p>
+                <ul class="text-xs text-gray-700 dark:text-gray-300 space-y-1">
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.length, 'text-gray-500': !requirements.length}">
+                        <i :class="requirements.length ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        At least 8 characters
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.uppercase, 'text-gray-500': !requirements.uppercase}">
+                        <i :class="requirements.uppercase ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One uppercase letter
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.lowercase, 'text-gray-500': !requirements.lowercase}">
+                        <i :class="requirements.lowercase ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One lowercase letter
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.number, 'text-gray-500': !requirements.number}">
+                        <i :class="requirements.number ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One number
+                    </li>
+                    <li :class="{'text-green-600 dark:text-green-400': requirements.special, 'text-gray-500': !requirements.special}">
+                        <i :class="requirements.special ? 'fas fa-check' : 'fas fa-times'" class="mr-1"></i>
+                        One special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+                    </li>
+                </ul>
+            </div>
+            
+            <!-- Form -->
+            <form @submit.prevent="submitPasswordChange()" class="space-y-4">
+                <!-- Current Password -->
+                <div>
+                    <label for="current-password-modal" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        Current Password
+                    </label>
+                    <input type="password" 
+                           id="current-password-modal"
+                           x-model="formData.currentPassword"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Enter current password">
+                </div>
+                
+                <!-- New Password -->
+                <div>
+                    <label for="new-password-modal" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        New Password
+                    </label>
+                    <input type="password" 
+                           id="new-password-modal"
+                           x-model="formData.newPassword"
+                           @input="validatePassword()"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Enter new password">
+                    <p x-show="validationErrors.length > 0" class="text-xs text-red-600 dark:text-red-400 mt-1">
+                        <span x-text="validationErrors.join(', ')"></span>
+                    </p>
+                </div>
+                
+                <!-- Confirm Password -->
+                <div>
+                    <label for="confirm-password-modal" class="block text-sm font-bold text-black dark:text-white mb-1">
+                        Confirm Password
+                    </label>
+                    <input type="password" 
+                           id="confirm-password-modal"
+                           x-model="formData.confirmPassword"
+                           @input="validatePassword()"
+                           required
+                           class="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-black dark:text-white rounded-md focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 font-medium"
+                           placeholder="Confirm new password">
+                    <p x-show="formData.confirmPassword && formData.newPassword !== formData.confirmPassword" 
+                       class="text-xs text-red-600 dark:text-red-400 mt-1">
+                        Passwords do not match
+                    </p>
+                </div>
+                
+                <!-- Error Message -->
+                <div x-show="errorMessage" 
+                     class="p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700 rounded-md">
+                    <p class="text-sm text-red-800 dark:text-red-200" x-text="errorMessage"></p>
+                </div>
+                
+                <!-- Success Message -->
+                <div x-show="successMessage" 
+                     class="p-3 bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-700 rounded-md">
+                    <p class="text-sm text-green-800 dark:text-green-200" x-text="successMessage"></p>
+                </div>
+                
+                <!-- Submit Button -->
+                <div class="flex space-x-3">
+                    <button type="button"
+                            @click="closeModal()"
+                            class="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 font-bold text-black dark:text-white rounded-md transition-all hover:bg-gray-50 dark:hover:bg-gray-700">
+                        Cancel
+                    </button>
+                    <button type="submit"
+                            :disabled="!isFormValid || loading"
+                            :class="{
+                                'bg-cyan-400 dark:bg-cyan-500 hover:bg-cyan-300 dark:hover:bg-cyan-400': isFormValid && !loading,
+                                'bg-gray-300 dark:bg-gray-600 cursor-not-allowed': !isFormValid || loading
+                            }"
+                            class="flex-1 px-6 py-3 border border-gray-300 dark:border-gray-600 font-bold text-black dark:text-white rounded-md transition-all disabled:opacity-50">
+                        <span x-show="!loading">Change Password</span>
+                        <span x-show="loading">
+                            <i class="fas fa-spinner fa-spin mr-2"></i> Changing...
+                        </span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Confirm Dialog Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 10001;">
+        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+            <div class="mt-3 text-center">
+                <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-yellow-100 dark:bg-yellow-900/30">
+                    <i class="fas fa-exclamation-triangle text-yellow-600 dark:text-yellow-400"></i>
+                </div>
+                <h3 class="text-lg font-medium text-gray-900 dark:text-white mt-5" id="confirm-title">Confirm Action</h3>
+                <div class="mt-2 px-7 py-3">
+                    <p class="text-sm text-gray-500 dark:text-gray-400" id="confirm-message">
+                        Are you sure you want to proceed?
+                    </p>
+                </div>
+                <div class="items-center px-4 py-3">
+                    <button id="confirm-yes" 
+                            class="px-4 py-2 bg-blue-500 dark:bg-blue-600 text-white text-base font-medium rounded-md w-24 mr-2 hover:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-300 transition-colors duration-200">
+                        Yes
+                    </button>
+                    <button id="confirm-no" 
+                            class="px-4 py-2 bg-gray-500 dark:bg-gray-600 text-white text-base font-medium rounded-md w-24 hover:bg-gray-600 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors duration-200">
+                        No
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast and Confirm Dialog JavaScript -->
+    <script>
+        // Toast notification system
+        function showToast(message, type = 'info', duration = 5000, persist = true) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            
+            const toast = document.createElement('div');
+            toast.className = `toast flex items-center p-4 rounded-lg border`;
+            
+            // Set colors based on type
+            const colors = {
+                success: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200',
+                error: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200',
+                warning: 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-800 dark:text-yellow-200',
+                info: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+            };
+            
+            const icons = {
+                success: 'fa-check-circle',
+                error: 'fa-exclamation-circle',
+                warning: 'fa-exclamation-triangle',
+                info: 'fa-info-circle'
+            };
+            
+            toast.className += ` ${colors[type] || colors.info}`;
+            
+            toast.innerHTML = `
+                <div class="flex-shrink-0">
+                    <i class="fas ${icons[type] || icons.info} text-lg"></i>
+                </div>
+                <div class="ml-3 flex-1">
+                    <p class="text-sm font-medium">${escapeHtmlForToasts(message)}</p>
+                </div>
+                <div class="ml-4 flex-shrink-0">
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                            class="inline-flex text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 focus:outline-none">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            `;
+            
+            container.appendChild(toast);
+            
+            // Save notification to database (async, don't block toast display)
+            if (persist) {
+                saveNotificationToDatabase(message, type).catch(err => {
+                    console.error('Failed to save notification:', err);
+                    // Don't break toast display if API fails
+                });
+            }
+            
+            // Auto-dismiss after duration
+            if (duration > 0) {
+                setTimeout(() => {
+                    toast.classList.add('fade-out');
+                    setTimeout(() => toast.remove(), 300);
+                }, duration);
+            }
+            
+            return toast;
+        }
+        
+        // Save notification to database
+        async function saveNotificationToDatabase(message, type) {
+            try {
+                const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                if (!csrfToken) {
+                    console.warn('CSRF token not found, skipping notification save');
+                    return;
+                }
+                
+                const response = await fetch('/api/notifications', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': csrfToken
+                    },
+                    body: JSON.stringify({
+                        message: message,
+                        type: type
+                    })
+                });
+                
+                if (response.ok) {
+                    // Update unread count in localStorage and trigger refresh if dropdown is open
+                    const cachedCount = localStorage.getItem('notification_unread_count');
+                    const currentCount = cachedCount ? parseInt(cachedCount, 10) : 0;
+                    localStorage.setItem('notification_unread_count', (currentCount + 1).toString());
+                    
+                    // Trigger unread count refresh in any open notification dropdowns
+                    window.dispatchEvent(new CustomEvent('notification-created'));
+                }
+            } catch (error) {
+                console.error('Error saving notification:', error);
+            }
+        }
+        
+        // Confirm dialog (returns Promise)
+        function showConfirm(message, title = 'Confirm Action') {
+            return new Promise((resolve) => {
+                const modal = document.getElementById('confirm-modal');
+                const titleEl = document.getElementById('confirm-title');
+                const messageEl = document.getElementById('confirm-message');
+                const yesBtn = document.getElementById('confirm-yes');
+                const noBtn = document.getElementById('confirm-no');
+                
+                if (!modal) {
+                    resolve(false);
+                    return;
+                }
+                
+                titleEl.textContent = title;
+                messageEl.textContent = message;
+                modal.classList.remove('hidden');
+                
+                const cleanup = () => {
+                    modal.classList.add('hidden');
+                    yesBtn.removeEventListener('click', handleYes);
+                    noBtn.removeEventListener('click', handleNo);
+                    modal.removeEventListener('click', handleBackdrop);
+                };
+                
+                const handleYes = () => {
+                    cleanup();
+                    resolve(true);
+                };
+                
+                const handleNo = () => {
+                    cleanup();
+                    resolve(false);
+                };
+                
+                const handleBackdrop = (e) => {
+                    if (e.target === modal) {
+                        handleNo();
+                    }
+                };
+                
+                yesBtn.addEventListener('click', handleYes);
+                noBtn.addEventListener('click', handleNo);
+                modal.addEventListener('click', handleBackdrop);
+            });
+        }
+        
+        // Helper function to escape HTML (must be defined before tooltip system)
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Tooltip/Popover system (event delegation so dynamically added [data-tooltip] works)
+        function initTooltips() {
+            document.body.addEventListener('click', function(e) {
+                const element = e.target.closest('[data-tooltip]');
+                if (!element) return;
+                e.stopPropagation();
+                const tooltipText = element.getAttribute('data-tooltip');
+                if (!tooltipText) return;
+                
+                // Remove any existing tooltip
+                const existing = document.querySelector('.tooltip-popover');
+                if (existing) {
+                    existing.remove();
+                    return;
+                }
+                
+                // Create tooltip element
+                const tooltip = document.createElement('div');
+                tooltip.className = 'tooltip-popover bottom';
+                
+                // Decode HTML entities and convert line breaks
+                const text = tooltipText
+                    .replace(/&#10;/g, '\n')
+                    .replace(/&quot;/g, '"')
+                    .replace(/&#123;/g, '{')
+                    .replace(/&#125;/g, '}');
+                
+                tooltip.innerHTML = `
+                    <button class="tooltip-close" onclick="this.parentElement.remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                    <div>${escapeHtml(text)}</div>
+                `;
+                
+                // Position tooltip
+                const rect = element.getBoundingClientRect();
+                const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                const scrollLeft = window.pageXOffset || document.documentElement.scrollLeft;
+                
+                tooltip.style.top = (rect.bottom + scrollTop + 8) + 'px';
+                tooltip.style.left = (rect.left + scrollLeft) + 'px';
+                
+                // Adjust if tooltip goes off screen
+                document.body.appendChild(tooltip);
+                const tooltipRect = tooltip.getBoundingClientRect();
+                if (tooltipRect.right > window.innerWidth) {
+                    tooltip.style.left = (window.innerWidth - tooltipRect.width - 20) + 'px';
+                }
+                if (tooltipRect.bottom > window.innerHeight) {
+                    tooltip.classList.remove('bottom');
+                    tooltip.classList.add('top');
+                    tooltip.style.top = (rect.top + scrollTop - tooltipRect.height - 8) + 'px';
+                }
+                
+                // Close on outside click
+                setTimeout(() => {
+                    document.addEventListener('click', function closeTooltip(ev) {
+                        if (!tooltip.contains(ev.target) && ev.target !== element) {
+                            tooltip.remove();
+                            document.removeEventListener('click', closeTooltip);
+                        }
+                    });
+                }, 0);
+            });
+        }
+        
+        // Initialize tooltips when DOM is ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initTooltips);
+        } else {
+            initTooltips();
+        }
+        
+        // Helper function to escape HTML (duplicate removed - defined above)
+        function escapeHtmlForToasts(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Alpine.js campaign reporting charts component (global so x-data can find it)
+        function reportingCharts(campaignId, campaignType, campaignName, campaignUid) {
+            return {
+                campaignId,
+                campaignType,
+                campaignName: campaignName || '',
+                campaignUid: campaignUid || '',
+                dateRange: 30,
+                loading: true,
+                seriesData: null,
+                chartInstances: {},
+                _reportingDrawRunId: 0,
+                
+                init() {
+                    this.loadSeries();
+                },
+                
+                setDateRange(n) {
+                    this.dateRange = n;
+                    this.loadSeries();
+                },
+                
+                hasChartData() {
+                    if (!this.seriesData) return false;
+                    if (this.campaignType === 'inbound' && this.seriesData.inbound) {
+                        const inb = this.seriesData.inbound;
+                        const sum = (arr) => (arr || []).reduce((a, b) => a + (b || 0), 0);
+                        return sum(inb.page_views) > 0 || sum(inb.credentials) > 0;
+                    }
+                    if (this.campaignType === 'outbound' && this.seriesData.outbound) {
+                        const out = this.seriesData.outbound;
+                        const sum = (arr) => (arr || []).reduce((a, b) => a + (b || 0), 0);
+                        return sum(out.email_sent) > 0 || sum(out.email_failed) > 0 || sum(out.call_completed) > 0 || sum(out.call_failed) > 0;
+                    }
+                    return false;
+                },
+                
+                getFromTo() {
+                    const to = new Date();
+                    const from = new Date();
+                    from.setDate(from.getDate() - this.dateRange);
+                    return {
+                        from: from.toISOString().slice(0, 10),
+                        to: to.toISOString().slice(0, 10)
+                    };
+                },
+                
+                async loadSeries() {
+                    this.loading = true;
+                    this.seriesData = null;
+                    const { from, to } = this.getFromTo();
+                    try {
+                        const res = await fetch(`/api/campaigns/${this.campaignId}/reporting/series?from=${from}&to=${to}&group_by=day`);
+                        if (res.ok) {
+                            this.seriesData = await res.json();
+                            const runId = ++this._reportingDrawRunId;
+                            this.$nextTick(() => {
+                                requestAnimationFrame(() => {
+                                    requestAnimationFrame(() => { this.drawCharts(runId); });
+                                });
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to load reporting series', e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+                
+                destroyCharts() {
+                    var self = this;
+                    Object.keys(self.chartInstances).forEach(function(key) {
+                        self.chartInstances[key] = null;
+                    });
+                    self.chartInstances = {};
+                },
+                
+                replaceCanvasIfPresent(id) {
+                    const el = document.getElementById(id);
+                    if (el && el.parentNode) {
+                        const fresh = document.createElement('canvas');
+                        fresh.id = id;
+                        if (el.className) fresh.className = el.className;
+                        el.parentNode.replaceChild(fresh, el);
+                    }
+                },
+                
+                drawCharts(runId) {
+                    if (runId !== this._reportingDrawRunId) return;
+                    if (typeof Chart === 'undefined' || !this.seriesData) return;
+                    this.replaceCanvasIfPresent('reporting-chart-activity');
+                    this.replaceCanvasIfPresent('reporting-chart-send-results');
+                    this.replaceCanvasIfPresent('reporting-chart-email-call');
+                    this.destroyCharts();
+                    const self = this;
+                    const runId2 = runId;
+                    setTimeout(function doCreateCharts() {
+                        if (runId2 !== self._reportingDrawRunId) return;
+                        if (!self.seriesData) return;
+                        const isDark = document.documentElement.classList.contains('dark');
+                        const gridColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+                        const textColor = isDark ? '#e5e7eb' : '#374151';
+                        const labels = self.seriesData.labels || [];
+                    
+                    if (self.campaignType === 'inbound' && self.seriesData.inbound) {
+                        const inb = self.seriesData.inbound;
+                        const canvas = document.getElementById('reporting-chart-activity');
+                        if (canvas && canvas.ownerDocument && document.body.contains(canvas)) {
+                            try {
+                                self.chartInstances.chartActivity = new Chart(canvas, {
+                                    type: 'line',
+                                    data: {
+                                        labels,
+                                        datasets: [
+                                            { label: 'Page views', data: inb.page_views || [], borderColor: 'rgb(59, 130, 246)', backgroundColor: 'rgba(59, 130, 246, 0.1)', fill: true, tension: 0.2 },
+                                            { label: 'Credentials', data: inb.credentials || [], borderColor: 'rgb(234, 179, 8)', backgroundColor: 'rgba(234, 179, 8, 0.1)', fill: true, tension: 0.2 }
+                                        ]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        scales: {
+                                            x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 45 } },
+                                            y: { grid: { color: gridColor }, ticks: { color: textColor }, beginAtZero: true }
+                                        },
+                                        plugins: { legend: { labels: { color: textColor } } }
+                                    }
+                                });
+                            } catch (err) {
+                                console.warn('Reporting: could not create activity chart', err);
+                            }
+                        }
+                    }
+                    
+                    if (self.campaignType === 'outbound' && self.seriesData.outbound) {
+                        const out = self.seriesData.outbound;
+                        const sent = (out.email_sent || []).map((v, i) => (v || 0) + (out.call_completed || [])[i]);
+                        const failed = (out.email_failed || []).map((v, i) => (v || 0) + (out.call_failed || [])[i]);
+                        const emailSent = out.email_sent || [];
+                        const emailFailed = out.email_failed || [];
+                        const callCompleted = out.call_completed || [];
+                        const callFailed = out.call_failed || [];
+                        const canvasSend = document.getElementById('reporting-chart-send-results');
+                        if (canvasSend && canvasSend.ownerDocument && document.body.contains(canvasSend)) {
+                            try {
+                                self.chartInstances.chartSendResults = new Chart(canvasSend, {
+                                    type: 'bar',
+                                    data: {
+                                        labels,
+                                        datasets: [
+                                            { label: 'Sent', data: sent, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 },
+                                            { label: 'Failed', data: failed, backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgb(239, 68, 68)', borderWidth: 1 }
+                                        ]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        scales: {
+                                            x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 45 } },
+                                            y: { grid: { color: gridColor }, ticks: { color: textColor }, beginAtZero: true }
+                                        },
+                                        plugins: { legend: { labels: { color: textColor } } }
+                                    }
+                                });
+                            } catch (err) {
+                                console.warn('Reporting: could not create send-results chart', err);
+                            }
+                        }
+                        const canvasEmailCall = document.getElementById('reporting-chart-email-call');
+                        if (canvasEmailCall && canvasEmailCall.ownerDocument && document.body.contains(canvasEmailCall)) {
+                            try {
+                                self.chartInstances.chartEmailCall = new Chart(canvasEmailCall, {
+                                    type: 'bar',
+                                    data: {
+                                        labels,
+                                        datasets: [
+                                            { label: 'Email sent', data: emailSent, backgroundColor: 'rgba(59, 130, 246, 0.8)', borderColor: 'rgb(59, 130, 246)', borderWidth: 1 },
+                                            { label: 'Email failed', data: emailFailed, backgroundColor: 'rgba(239, 68, 68, 0.8)', borderColor: 'rgb(239, 68, 68)', borderWidth: 1 },
+                                            { label: 'Call completed', data: callCompleted, backgroundColor: 'rgba(34, 197, 94, 0.8)', borderColor: 'rgb(34, 197, 94)', borderWidth: 1 },
+                                            { label: 'Call failed', data: callFailed, backgroundColor: 'rgba(234, 179, 8, 0.8)', borderColor: 'rgb(234, 179, 8)', borderWidth: 1 }
+                                        ]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        scales: {
+                                            x: { grid: { color: gridColor }, ticks: { color: textColor, maxRotation: 45 } },
+                                            y: { grid: { color: gridColor }, ticks: { color: textColor }, beginAtZero: true }
+                                        },
+                                        plugins: { legend: { labels: { color: textColor } } }
+                                    }
+                                });
+                            } catch (err) {
+                                console.warn('Reporting: could not create email-call chart', err);
+                            }
+                        }
+                    }
+                    }, 200);
+                },
+                
+                saveChart(refName, titleSlug) {
+                    const chart = this.chartInstances[refName];
+                    if (!chart) return;
+                    const dataUrl = chart.toBase64Image('image/png');
+                    const safeName = (this.campaignName || this.campaignUid || 'campaign').replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 50);
+                    const filename = `${safeName}-${titleSlug}-${this.dateRange}d.png`;
+                    const a = document.createElement('a');
+                    a.href = dataUrl;
+                    a.download = filename;
+                    a.click();
+                }
+            };
+        }
+        window.reportingCharts = reportingCharts;
+        
+        // Alpine.js password change modal component (for user menu)
+        function passwordChangeModal() {
+            return {
+                showModal: false,
+                formData: {
+                    currentPassword: '',
+                    newPassword: '',
+                    confirmPassword: ''
+                },
+                requirements: {
+                    length: false,
+                    uppercase: false,
+                    lowercase: false,
+                    number: false,
+                    special: false
+                },
+                validationErrors: [],
+                errorMessage: '',
+                successMessage: '',
+                loading: false,
+                
+                init() {
+                    // Make this accessible globally for the user menu
+                    window.passwordChangeModalData = this;
+                },
+                
+                closeModal() {
+                    this.showModal = false;
+                    this.formData = {
+                        currentPassword: '',
+                        newPassword: '',
+                        confirmPassword: ''
+                    };
+                    this.requirements = {
+                        length: false,
+                        uppercase: false,
+                        lowercase: false,
+                        number: false,
+                        special: false
+                    };
+                    this.validationErrors = [];
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                },
+                
+                validatePassword() {
+                    const password = this.formData.newPassword;
+                    this.validationErrors = [];
+                    
+                    // Reset requirements
+                    this.requirements = {
+                        length: false,
+                        uppercase: false,
+                        lowercase: false,
+                        number: false,
+                        special: false
+                    };
+                    
+                    if (password.length >= 8) {
+                        this.requirements.length = true;
+                    } else {
+                        this.validationErrors.push('Password must be at least 8 characters');
+                    }
+                    
+                    if (/[A-Z]/.test(password)) {
+                        this.requirements.uppercase = true;
+                    } else {
+                        this.validationErrors.push('Password must contain an uppercase letter');
+                    }
+                    
+                    if (/[a-z]/.test(password)) {
+                        this.requirements.lowercase = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a lowercase letter');
+                    }
+                    
+                    if (/[0-9]/.test(password)) {
+                        this.requirements.number = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a number');
+                    }
+                    
+                    if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+                        this.requirements.special = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a special character');
+                    }
+                },
+                
+                get isFormValid() {
+                    return this.formData.currentPassword &&
+                           this.formData.newPassword &&
+                           this.formData.confirmPassword &&
+                           this.formData.newPassword === this.formData.confirmPassword &&
+                           this.requirements.length &&
+                           this.requirements.uppercase &&
+                           this.requirements.lowercase &&
+                           this.requirements.number &&
+                           this.requirements.special;
+                },
+                
+                async submitPasswordChange() {
+                    if (!this.isFormValid || this.loading) {
+                        return;
+                    }
+                    
+                    this.loading = true;
+                    this.errorMessage = '';
+                    this.successMessage = '';
+                    
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch('/api/users/change-password', {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken || ''
+                            },
+                            body: JSON.stringify({
+                                current_password: this.formData.currentPassword,
+                                new_password: this.formData.newPassword,
+                                confirm_password: this.formData.confirmPassword
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            // Success - clear form and show success message
+                            this.successMessage = 'Password changed successfully!';
+                            this.formData = {
+                                currentPassword: '',
+                                newPassword: '',
+                                confirmPassword: ''
+                            };
+                            this.requirements = {
+                                length: false,
+                                uppercase: false,
+                                lowercase: false,
+                                number: false,
+                                special: false
+                            };
+                            this.validationErrors = [];
+                            
+                            // Show toast notification
+                            if (typeof showToast === 'function') {
+                                showToast('Password changed successfully!', 'success');
+                            }
+                            
+                            // Close modal after 2 seconds
+                            setTimeout(() => {
+                                this.closeModal();
+                            }, 2000);
+                        } else {
+                            // Show error
+                            this.errorMessage = data.error || 'Failed to change password';
+                            if (data.errors && data.errors.length > 0) {
+                                this.errorMessage += ': ' + data.errors.join(', ');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error changing password:', error);
+                        this.errorMessage = 'An error occurred while changing your password';
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            }
+        }
+        
+        // Alpine.js password reset modal component
+        function passwordResetModal() {
+            return {
+                showModal: false,
+                formData: {
+                    currentPassword: '',
+                    newPassword: '',
+                    confirmPassword: ''
+                },
+                requirements: {
+                    length: false,
+                    uppercase: false,
+                    lowercase: false,
+                    number: false,
+                    special: false
+                },
+                validationErrors: [],
+                errorMessage: '',
+                loading: false,
+                
+                init() {
+                    // Check if password reset is required
+                    this.checkPasswordResetRequired();
+                },
+                
+                async checkPasswordResetRequired() {
+                    try {
+                        // Check current user's password reset status
+                        // We'll get this from a data attribute or API call
+                        const userData = document.querySelector('[data-user-password-reset]');
+                        if (userData && userData.getAttribute('data-user-password-reset') === 'true') {
+                            this.showModal = true;
+                        }
+                    } catch (error) {
+                        console.error('Error checking password reset status:', error);
+                    }
+                },
+                
+                validatePassword() {
+                    const password = this.formData.newPassword;
+                    this.validationErrors = [];
+                    
+                    // Reset requirements
+                    this.requirements = {
+                        length: false,
+                        uppercase: false,
+                        lowercase: false,
+                        number: false,
+                        special: false
+                    };
+                    
+                    if (password.length >= 8) {
+                        this.requirements.length = true;
+                    } else {
+                        this.validationErrors.push('Password must be at least 8 characters');
+                    }
+                    
+                    if (/[A-Z]/.test(password)) {
+                        this.requirements.uppercase = true;
+                    } else {
+                        this.validationErrors.push('Password must contain an uppercase letter');
+                    }
+                    
+                    if (/[a-z]/.test(password)) {
+                        this.requirements.lowercase = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a lowercase letter');
+                    }
+                    
+                    if (/[0-9]/.test(password)) {
+                        this.requirements.number = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a number');
+                    }
+                    
+                    if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+                        this.requirements.special = true;
+                    } else {
+                        this.validationErrors.push('Password must contain a special character');
+                    }
+                    
+                    // Check password match
+                    if (this.formData.confirmPassword && password !== this.formData.confirmPassword) {
+                        // Error shown separately
+                    }
+                },
+                
+                get isFormValid() {
+                    return this.formData.currentPassword &&
+                           this.formData.newPassword &&
+                           this.formData.confirmPassword &&
+                           this.formData.newPassword === this.formData.confirmPassword &&
+                           this.requirements.length &&
+                           this.requirements.uppercase &&
+                           this.requirements.lowercase &&
+                           this.requirements.number &&
+                           this.requirements.special;
+                },
+                
+                async submitPasswordChange() {
+                    if (!this.isFormValid || this.loading) {
+                        return;
+                    }
+                    
+                    this.loading = true;
+                    this.errorMessage = '';
+                    
+                    try {
+                        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+                        const response = await fetch('/api/users/change-password', {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken || ''
+                            },
+                            body: JSON.stringify({
+                                current_password: this.formData.currentPassword,
+                                new_password: this.formData.newPassword,
+                                confirm_password: this.formData.confirmPassword
+                            })
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            // Success - hide modal and reload page
+                            this.showModal = false;
+                            showToast('Password changed successfully!', 'success');
+                            // Reload page to refresh user state
+                            setTimeout(() => {
+                                window.location.reload();
+                            }, 1000);
+                        } else {
+                            // Show error
+                            this.errorMessage = data.error || 'Failed to change password';
+                            if (data.errors && data.errors.length > 0) {
+                                this.errorMessage += ': ' + data.errors.join(', ');
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error changing password:', error);
+                        this.errorMessage = 'An error occurred while changing your password';
+                    } finally {
+                        this.loading = false;
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Extra JS block for child templates -->
+    {% block extra_js %}{% endblock %}
+    
+    <!-- Random Footer Tagline -->
+    <script>
+        (function() {
+            const quotes = [
+                "Phish happens.",
+                "Never had a bad days phishin'.",
+                "Mamma always said I was a master baiter.",
+                "Gone phishin.",
+                "Here phishy phishy..."
+            ];
+            
+            const taglineElement = document.getElementById('footer-tagline');
+            if (taglineElement) {
+                const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+                taglineElement.textContent = randomQuote;
+            }
+        })();
+    </script>
+</body>
+</html>

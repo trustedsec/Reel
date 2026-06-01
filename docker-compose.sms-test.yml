@@ -1,0 +1,54 @@
+services:
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: reel-sms-test
+    depends_on:
+      phishing:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8001:8000"
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=sqlite:////app/instance/reel.db
+      - SECRET_KEY=sms-plugin-dev-key-not-for-prod
+      - JWT_SECRET_KEY=sms-jwt-dev-key-not-for-prod
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+    volumes:
+      - ./plugins:/app/plugins
+      - ./shared:/app/shared
+      - ./admin/templates:/app/admin/templates
+      - ./api:/app/api
+      - ./workflows:/app/workflows
+      - ./phishing:/app/phishing
+      - ./storage:/app/storage
+      - sms-test-db:/app/instance
+
+  phishing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: reel-sms-phishing
+    ports:
+      - "1234:1234"
+    environment:
+      - FLASK_ENV=development
+      - DATABASE_URL=sqlite:////app/instance/reel.db
+      - SECRET_KEY=sms-plugin-dev-key-not-for-prod
+      - JWT_SECRET_KEY=sms-jwt-dev-key-not-for-prod
+    command: ["python", "-c", "from app import create_app; create_app().run(host='0.0.0.0', port=1234)"]
+    volumes:
+      - ./plugins:/app/plugins
+      - ./shared:/app/shared
+      - ./phishing:/app/phishing
+      - ./api:/app/api
+      - ./workflows:/app/workflows
+      - ./storage:/app/storage
+      - sms-test-db:/app/instance
+
+volumes:
+  sms-test-db:
