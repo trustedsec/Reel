@@ -1,78 +1,50 @@
-# Multi-stage build for Reel Phishing Framework
-FROM python:3.12-slim as builder
+FROM ubuntu:24.04
 
-# Set build arguments
-ARG BUILD_DATE
-ARG VCS_REF
-ARG VERSION
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Add labels
-LABEL org.opencontainers.image.title="Reel Phishing Framework"
-LABEL org.opencontainers.image.description="Defensive security phishing framework for testing"
-LABEL org.opencontainers.image.created=$BUILD_DATE
-LABEL org.opencontainers.image.revision=$VCS_REF
-LABEL org.opencontainers.image.version=$VERSION
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set working directory
-WORKDIR /app
-
-# Copy requirements first for better caching
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
-
-# Production stage
-FROM python:3.12-slim as production
-
-# Install runtime dependencies (fonts-dejavu-core needed for Pillow MMS card rendering)
 RUN apt-get update && apt-get install -y \
     curl \
+    ca-certificates \
+    git \
+    build-essential \
+    gcc \
+    python3 \
+    python3-venv \
+    python3-dev \
+    python3-pip \
+    libmagic1 \
+    screen \
+    debian-keyring \
+    debian-archive-keyring \
+    apt-transport-https \
+    gnupg \
     fonts-dejavu-core \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
-RUN groupadd -r reel && useradd -r -g reel -d /app -s /bin/bash reel
+# Install Caddy
+RUN curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
+    && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list \
+    && apt-get update && apt-get install -y caddy \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
+# Install GraphSpy
+RUN pip3 install --break-system-packages graphspy
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
+
 WORKDIR /app
 
-# Copy Python packages from builder
-COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin /usr/local/bin
+COPY . .
 
-# Copy application code
-COPY --chown=reel:reel . .
+RUN chmod +x deploy.sh start.sh entrypoint.sh
 
-# Create necessary directories
-RUN mkdir -p logs storage/uploads storage/templates storage/assets storage/temp \
-    storage/template_previews storage/backups storage/plugins \
-    storage/caddy/data storage/caddy/config instance && \
-    chown -R reel:reel logs storage instance
+RUN ./deploy.sh
 
-# Switch to non-root user
-USER reel
+ENV ADMIN_HOST=0.0.0.0
+ENV PHISHING_HOST=0.0.0.0
 
-# Set environment variables
-ENV FLASK_APP=app.py
-ENV FLASK_ENV=production
-ENV PYTHONPATH=/app
-ENV DATABASE_URL=sqlite:///instance/reel.db
+EXPOSE 1234 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8000/health || exit 1
-
-# Expose ports
-EXPOSE 8000 1234
-
-# Default command
-CMD ["python", "-c", "from app import create_admin_app; create_admin_app().run(host='0.0.0.0', port=8000)"]
+ENTRYPOINT ["./entrypoint.sh"]

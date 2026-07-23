@@ -1428,7 +1428,8 @@ function submitForm(formData, successMessage = 'Campaign created successfully') 
           showToast('Inbound campaigns require at least one workflow (GET or POST)', 'error');
           return;
       }
-      // Ensure UA filter fields are always sent for inbound (unchecked checkbox omits from formData)
+      // Ensure checkbox fields are always sent for inbound (unchecked checkbox omits from formData)
+      if (!('captcha_enabled' in data)) data.captcha_enabled = false;
       if (!('ua_filter_enabled' in data)) data.ua_filter_enabled = false;
       if (!('ua_deny_list' in data)) data.ua_deny_list = [];
       if (!('ua_blocked_template_id' in data)) data.ua_blocked_template_id = null;

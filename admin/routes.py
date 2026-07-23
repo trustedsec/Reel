@@ -132,7 +132,9 @@ def campaigns():
     """Campaign management page"""
     try:
         page = request.args.get('page', 1, type=int)
-        campaigns = Campaign.query.order_by(
+        campaigns = Campaign.query.filter(
+            Campaign.status != 'deleted'
+        ).order_by(
             Campaign.created_at.desc()
         ).paginate(
             page=page, per_page=10, error_out=False
