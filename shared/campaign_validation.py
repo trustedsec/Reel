@@ -35,6 +35,14 @@ def validate_campaign_for_activation(campaign) -> list:
             config = campaign.config or {}
             if not config.get('captcha_site_key') or not config.get('captcha_secret_key'):
                 errors.append("CAPTCHA is enabled but Turnstile site key or secret key is missing")
+
+        # Gate token: if enabled, require template or redirect URL based on mode
+        if getattr(campaign, 'gate_enabled', False):
+            gate_mode = getattr(campaign, 'gate_mode', 'template') or 'template'
+            if gate_mode == 'template' and not getattr(campaign, 'gate_template_id', None):
+                errors.append("Gate token is enabled but no decoy template is selected")
+            if gate_mode == 'redirect' and not getattr(campaign, 'gate_redirect_url', None):
+                errors.append("Gate token is enabled but no redirect URL is set")
     elif campaign.campaign_type == 'outbound':
         if not campaign.post_workflow_id:
             errors.append("Outbound campaigns require an outbound workflow.")

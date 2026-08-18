@@ -767,6 +767,57 @@ def get_campaign_events(campaign_id):
         logger.exception(f"Error getting events for campaign {campaign_id}")
         return jsonify({'error': str(e)}), 500
 
+@api_bp.route('/campaigns/<int:campaign_id>/events', methods=['DELETE'])
+@require_auth
+def clear_campaign_events(campaign_id):
+    """
+    Clear all events for a campaign
+    ---
+    tags:
+      - Campaigns
+    security:
+      - Bearer: []
+    parameters:
+      - name: campaign_id
+        in: path
+        type: integer
+        required: true
+        description: Campaign ID
+    responses:
+      200:
+        description: Events cleared successfully
+        schema:
+          type: object
+          properties:
+            success:
+              type: boolean
+            deleted:
+              type: integer
+              description: Number of events deleted
+      401:
+        description: Unauthorized
+      404:
+        description: Campaign not found
+    """
+    try:
+        campaign = Campaign.query.get_or_404(campaign_id)
+
+        deleted = Event.query.filter(Event.campaign_id == campaign_id).delete()
+        db.session.commit()
+
+        logger.info(f"Cleared {deleted} events for campaign '{campaign.name}' (ID: {campaign_id})")
+
+        return jsonify({
+            'success': True,
+            'deleted': deleted,
+            'message': f'Cleared {deleted} event{"s" if deleted != 1 else ""}'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.exception(f"Error clearing events for campaign {campaign_id}")
+        return jsonify({'error': str(e)}), 500
+
 @api_bp.route('/campaigns/<int:campaign_id>/send-logs', methods=['GET'])
 @require_auth
 def get_campaign_send_logs(campaign_id):

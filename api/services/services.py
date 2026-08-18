@@ -300,6 +300,14 @@ class CampaignService:
                     if request.gate_enabled is False:
                         campaign.gate_template_id = None
                         campaign.gate_redirect_url = None
+
+                    # Validate gate configuration is complete when enabled
+                    if campaign.gate_enabled:
+                        gate_mode = campaign.gate_mode or 'template'
+                        if gate_mode == 'template' and not campaign.gate_template_id:
+                            raise ValueError('Gate template is required when gate mode is "template"')
+                        if gate_mode == 'redirect' and not campaign.gate_redirect_url:
+                            raise ValueError('Redirect URL is required when gate mode is "redirect"')
                 else:
                     campaign.gate_enabled = False
                     campaign.gate_token = None
@@ -354,6 +362,17 @@ class CampaignService:
                         campaign.caddy_config_id = None
                     except Exception as e:
                         logger.warning(f"Failed to remove Caddy config for campaign {campaign.uid}: {e}")
+
+            # Redeploy Caddy config for already-active campaigns when
+            # config-affecting fields change (gate token, UA filter, etc.)
+            if new_status == 'active' and needs_caddy and old_status == 'active':
+                from shared.caddy import caddy_manager, CaddyAPIError
+                db.session.flush()
+                try:
+                    caddy_manager.deploy_campaign_config(campaign)
+                    campaign.caddy_config_id = f"campaign_{campaign.uid or campaign.custom_domain}"
+                except CaddyAPIError as e:
+                    logger.warning(f"Caddy redeploy error for campaign {campaign.uid}: {e}")
 
             # Run phishing detection on every update for inbound campaigns,
             # regardless of whether HTML changed — keeps the score fresh and

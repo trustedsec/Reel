@@ -99,6 +99,10 @@
             </a>
             {% endif %}
             {% endif %}
+            <button onclick="clearEvents()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
+                <i class="fas fa-eraser mr-2"></i>
+                Clear Events
+            </button>
             <button onclick="deleteCampaign()" class="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors duration-200">
                 <i class="fas fa-trash mr-2"></i>
                 Delete
@@ -823,6 +827,33 @@
     </div>
 </div>
 
+<!-- Clear Events Confirmation Modal -->
+<div id="clearEventsModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
+    <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white dark:bg-gray-800 transition-colors duration-200">
+        <div class="mt-3 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-amber-100 dark:bg-amber-900/30">
+                <i class="fas fa-eraser text-amber-600 dark:text-amber-400"></i>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900 dark:text-white mt-5">Clear Events</h3>
+            <div class="mt-2 px-7 py-3">
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                    This will delete all captured events for "{{ campaign.name if campaign else 'this campaign' }}" — page views, form submissions, credentials, and timeline entries. Stats will reset to zero.
+                </p>
+            </div>
+            <div class="items-center px-4 py-3">
+                <button id="confirmClearEvents"
+                        class="px-4 py-2 bg-amber-500 dark:bg-amber-600 text-white text-base font-medium rounded-md mr-2 hover:bg-amber-600 dark:hover:bg-amber-700 focus:outline-none focus:ring-2 focus:ring-amber-300 transition-colors duration-200">
+                    Clear All Events
+                </button>
+                <button onclick="hideClearEventsModal()"
+                        class="px-4 py-2 bg-gray-500 dark:bg-gray-600 text-white text-base font-medium rounded-md w-24 hover:bg-gray-600 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-300 transition-colors duration-200">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- SSL Details Modal -->
 {% if campaign and campaign.ssl_mode == 'custom' and campaign.ssl_cert_path %}
 <div id="sslModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full hidden" style="z-index: 1000;">
@@ -1150,6 +1181,49 @@ document.getElementById('confirmDelete').addEventListener('click', function() {
 document.getElementById('deleteModal').addEventListener('click', function(e) {
     if (e.target === this) {
         hideDeleteModal();
+    }
+});
+
+// Clear Events modal
+function clearEvents() {
+    document.getElementById('clearEventsModal').classList.remove('hidden');
+}
+
+function hideClearEventsModal() {
+    document.getElementById('clearEventsModal').classList.add('hidden');
+}
+
+document.getElementById('confirmClearEvents').addEventListener('click', function() {
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+
+    fetch(`/api/campaigns/{{ campaign.id if campaign else 0 }}/events`, {
+        method: 'DELETE',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': csrfToken
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message, 'success');
+            setTimeout(() => location.reload(), 500);
+        } else {
+            showToast('Error clearing events: ' + data.error, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('Error clearing events', 'error');
+    })
+    .finally(() => {
+        hideClearEventsModal();
+    });
+});
+
+document.getElementById('clearEventsModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        hideClearEventsModal();
     }
 });
 
