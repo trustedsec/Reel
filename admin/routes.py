@@ -110,15 +110,23 @@ def dashboard():
         total_campaigns = Campaign.query.count()
         active_campaigns = Campaign.query.filter_by(status='active').count()
         draft_campaigns = Campaign.query.filter_by(status='draft').count()
-        
+
+        # Live browser session count
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        live_sessions = len(manager.get_operator_sessions()) if manager else 0
+        total_sessions = manager.get_active_count() if manager else 0
+
         recent_campaigns = Campaign.query.order_by(
             Campaign.created_at.desc()
         ).limit(5).all()
-        
+
         return render_template('dashboard.html',
                              total_campaigns=total_campaigns,
                              active_campaigns=active_campaigns,
                              draft_campaigns=draft_campaigns,
+                             live_sessions=live_sessions,
+                             total_sessions=total_sessions,
                              recent_campaigns=recent_campaigns)
     except Exception as e:
         logger.exception("Error loading dashboard")

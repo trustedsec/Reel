@@ -105,6 +105,8 @@ class CampaignService:
                     campaign.gate_mode = request.gate_mode or 'template'
                     campaign.gate_redirect_url = request.gate_redirect_url
                     campaign.gate_template_id = request.gate_template_id if campaign.gate_enabled else None
+                if hasattr(Campaign, 'allowed_proxy_groups'):
+                    campaign.allowed_proxy_groups = request.allowed_proxy_groups or []
 
             # Outbound MMS toggle
             if campaign_type == 'outbound' and hasattr(Campaign, 'is_mms_enabled'):
@@ -312,6 +314,14 @@ class CampaignService:
                     campaign.gate_enabled = False
                     campaign.gate_token = None
                     campaign.gate_template_id = None
+
+            # Proxy path groups - only for inbound campaigns
+            if hasattr(Campaign, 'allowed_proxy_groups'):
+                if current_type == 'inbound':
+                    if request.allowed_proxy_groups is not None:
+                        campaign.allowed_proxy_groups = request.allowed_proxy_groups
+                else:
+                    campaign.allowed_proxy_groups = []
 
             campaign.updated_at = datetime.utcnow()
 

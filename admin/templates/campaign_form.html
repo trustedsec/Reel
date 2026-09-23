@@ -722,6 +722,53 @@ scraper{% endif %}</textarea>
                         </div>
                     </div>
 
+                    <!-- Proxy Path Groups (only for inbound campaigns) -->
+                    <div id="proxy-paths-section">
+                        <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                            <span>Allowed Proxy Paths</span>
+                            <i class="fas fa-info-circle text-gray-400 dark:text-gray-500 text-xs cursor-pointer hover:text-blue-500 dark:hover:text-blue-400 transition-colors"
+                               data-tooltip="Control which URL paths are proxied to the application server. By default only the campaign root (/) is proxied — all other paths return a 404 directly from Caddy, keeping scanner noise off the backend. Enable path groups as needed for your campaign's features."></i>
+                        </h4>
+                        <div class="space-y-3">
+                            <p class="text-sm text-gray-500 dark:text-gray-400">The root path (<code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/</code>) and campaign UID paths are always proxied. Enable additional path groups below:</p>
+                            <div class="space-y-2">
+                                <div class="flex items-start">
+                                    <div class="flex items-center h-5">
+                                        <input id="proxy_tracking" type="checkbox"
+                                               {% if campaign and campaign.allowed_proxy_groups and 'tracking' in campaign.allowed_proxy_groups %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                    </div>
+                                    <div class="ml-3 text-sm">
+                                        <label for="proxy_tracking" class="font-medium text-gray-700 dark:text-gray-300">Tracking</label>
+                                        <p class="text-gray-500 dark:text-gray-400">Allow <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/track/*</code>, <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/js/*</code> — enable if using email open or link click tracking.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start">
+                                    <div class="flex items-center h-5">
+                                        <input id="proxy_credential_proxy" type="checkbox"
+                                               {% if campaign and campaign.allowed_proxy_groups and 'credential_proxy' in campaign.allowed_proxy_groups %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                    </div>
+                                    <div class="ml-3 text-sm">
+                                        <label for="proxy_credential_proxy" class="font-medium text-gray-700 dark:text-gray-300">Credential Proxy</label>
+                                        <p class="text-gray-500 dark:text-gray-400">Allow <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/proxy-status/*</code>, <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/callback</code> — enable if using MFA relay or OAuth proxy.</p>
+                                    </div>
+                                </div>
+                                <div class="flex items-start">
+                                    <div class="flex items-center h-5">
+                                        <input id="proxy_media" type="checkbox"
+                                               {% if campaign and campaign.allowed_proxy_groups and 'media' in campaign.allowed_proxy_groups %}checked{% endif %}
+                                               class="focus:ring-blue-500 h-4 w-4 text-blue-600 border-gray-300 rounded">
+                                    </div>
+                                    <div class="ml-3 text-sm">
+                                        <label for="proxy_media" class="font-medium text-gray-700 dark:text-gray-300">Media</label>
+                                        <p class="text-gray-500 dark:text-gray-400">Allow <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/m/*</code>, <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 rounded">/media/*</code> — enable if using MMS cards, QR codes, or text-to-image.</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- SSL Configuration (only for inbound campaigns) -->
                     <div id="ssl-config-section">
                         <h4 class="text-base font-medium text-gray-900 dark:text-white mb-4 flex items-center gap-2">
@@ -920,6 +967,7 @@ function toggleCampaignTypeFields() {
         if (securitySection) securitySection.style.display = 'block';
         if (custom404Section) custom404Section.classList.remove('hidden');
         document.getElementById('ua-filter-section').classList.remove('hidden');
+        document.getElementById('proxy-paths-section').classList.remove('hidden');
         if (mmsSection) mmsSection.style.display = 'none';
         uidInput.required = true;
         const captchaSection = document.getElementById('captcha-section');
@@ -938,6 +986,7 @@ function toggleCampaignTypeFields() {
         if (securitySection) securitySection.style.display = 'none';
         if (custom404Section) custom404Section.classList.add('hidden');
         document.getElementById('ua-filter-section').classList.add('hidden');
+        document.getElementById('proxy-paths-section').classList.add('hidden');
         if (mmsSection) mmsSection.style.display = 'block';
         const captchaSection = document.getElementById('captcha-section');
         if (captchaSection) captchaSection.classList.add('hidden');
@@ -1437,6 +1486,12 @@ function submitForm(formData, successMessage = 'Campaign created successfully') 
       delete data.is_mms_enabled;
       // Ensure gate fields are always sent for inbound
       if (!('gate_enabled' in data)) data.gate_enabled = false;
+      // Collect proxy path groups from checkboxes
+      const proxyGroups = [];
+      if (document.getElementById('proxy_tracking')?.checked) proxyGroups.push('tracking');
+      if (document.getElementById('proxy_credential_proxy')?.checked) proxyGroups.push('credential_proxy');
+      if (document.getElementById('proxy_media')?.checked) proxyGroups.push('media');
+      data.allowed_proxy_groups = proxyGroups;
   } else {
       // Outbound campaigns: single workflow field
       const outboundWorkflowId = formData.get('outbound_workflow_id');
@@ -1462,6 +1517,9 @@ function submitForm(formData, successMessage = 'Campaign created successfully') 
       delete data.gate_mode;
       delete data.gate_template_id;
       delete data.gate_redirect_url;
+
+      // Proxy path groups are inbound-only
+      delete data.allowed_proxy_groups;
 
       // Default unchecked MMS checkbox to false; clear domain when MMS off
       if (!('is_mms_enabled' in data)) data.is_mms_enabled = false;

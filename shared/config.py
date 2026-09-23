@@ -74,6 +74,7 @@ class Config:
         'CADDY_DEFAULT_DOMAIN': {'default': 'localhost', 'type': 'string', 'category': 'caddy'},
         'CADDY_ENABLE_STAGING': {'default': False, 'type': 'bool', 'category': 'caddy', 'description': 'Use Let\'s Encrypt staging environment'},
         'CADDY_LOG_LEVEL': {'default': 'INFO', 'type': 'string', 'category': 'caddy'},
+        'CADDY_PROXY_ALL_PATHS': {'default': False, 'type': 'bool', 'category': 'caddy', 'description': 'Disable path filtering and proxy all requests to Flask (debug/fallback)'},
     }
     
     @classmethod
@@ -188,7 +189,11 @@ class Config:
     @property
     def CADDY_LOG_LEVEL(self):
         return self.get_setting('CADDY_LOG_LEVEL', 'INFO')
-    
+
+    @property
+    def CADDY_PROXY_ALL_PATHS(self):
+        return self.get_setting('CADDY_PROXY_ALL_PATHS', False)
+
     @classmethod
     def init_app(cls, app):
         """Initialize application with configuration"""

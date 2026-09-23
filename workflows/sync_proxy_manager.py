@@ -33,15 +33,21 @@ class SyncProxySession:
         self.config = config
         self.created_at = time.time()
         self.last_activity = time.time()
+        self.state = 'initial'  # initial → running → operator_available → screencast → closed
 
         self._command_queue: queue.Queue = queue.Queue()
         self._result_queue: queue.Queue = queue.Queue()
+        self._frame_queue: queue.Queue = queue.Queue(maxsize=5)
         self._thread: Optional[threading.Thread] = None
         self._running = False
         self._approved_result: Optional[dict] = None  # cached by check_status on approval
+        self._current_url: Optional[str] = None
+        self._page_title: Optional[str] = None
+        self._screencast_metadata: Optional[dict] = None
 
         # Start the browser thread
         self._running = True
+        self.state = 'running'
         self._thread = threading.Thread(
             target=self._browser_thread_main, daemon=True
         )
@@ -102,9 +108,61 @@ class SyncProxySession:
         except queue.Empty:
             return {'status': 'waiting'}
 
+    # -- Screencast methods (called from WebSocket handler) --
+
+    def start_screencast(self):
+        """Start CDP screencast — frames appear on _frame_queue."""
+        self.last_activity = time.time()
+        self.state = 'screencast'
+        self._command_queue.put({'type': 'start_screencast'})
+
+    def stop_screencast(self):
+        """Stop CDP screencast."""
+        self._command_queue.put({'type': 'stop_screencast'})
+        if self.state == 'screencast':
+            self.state = 'operator_available'
+
+    def get_frame(self, timeout: float = 1.0) -> Optional[dict]:
+        """Blocking read of the next screencast frame. Returns None on timeout."""
+        try:
+            return self._frame_queue.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def send_input(self, event: dict):
+        """Send a mouse/keyboard/scroll input event to the browser."""
+        self.last_activity = time.time()
+        self._command_queue.put({'type': 'input', 'event': event})
+
+    def navigate(self, url: str, timeout: int = 30) -> dict:
+        """Navigate the browser to a new URL."""
+        self.last_activity = time.time()
+        self._command_queue.put({'type': 'navigate_to', 'url': url})
+        try:
+            return self._result_queue.get(timeout=timeout)
+        except queue.Empty:
+            return {'success': False, 'error': 'Navigation timeout'}
+
+    def export_cookies(self, timeout: int = 5) -> list:
+        """Get current cookies from the browser context."""
+        self.last_activity = time.time()
+        self._command_queue.put({'type': 'get_cookies'})
+        try:
+            result = self._result_queue.get(timeout=timeout)
+            return result.get('cookies', [])
+        except queue.Empty:
+            return []
+
+    def get_current_url(self) -> str:
+        return self._current_url or self.target_url
+
+    def get_page_title(self) -> str:
+        return self._page_title or ''
+
     def cleanup(self):
         """Send shutdown command and join thread."""
         self._running = False
+        self.state = 'closed'
         try:
             self._command_queue.put({'type': 'shutdown'})
         except Exception:
@@ -193,8 +251,54 @@ class SyncProxySession:
                     except Exception as e:
                         logger.exception(f"Error in check_status: {e}")
                         self._result_queue.put({'status': 'waiting'})
+
+                elif cmd_type == 'start_screencast':
+                    try:
+                        await self._handle_start_screencast(page)
+                    except Exception as e:
+                        logger.exception(f"Error starting screencast: {e}")
+
+                elif cmd_type == 'stop_screencast':
+                    try:
+                        await self._handle_stop_screencast()
+                    except Exception as e:
+                        logger.exception(f"Error stopping screencast: {e}")
+
+                elif cmd_type == 'input':
+                    try:
+                        await self._handle_input(page, command.get('event', {}))
+                    except Exception as e:
+                        logger.debug(f"Error handling input: {e}")
+
+                elif cmd_type == 'navigate_to':
+                    try:
+                        await page.goto(command['url'], wait_until='domcontentloaded', timeout=30000)
+                        self._current_url = page.url
+                        self._page_title = await page.title()
+                        self._result_queue.put({'success': True, 'url': page.url})
+                    except Exception as e:
+                        logger.error(f"Navigation error: {e}")
+                        self._result_queue.put({'success': False, 'error': str(e)})
+
+                elif cmd_type == 'get_cookies':
+                    try:
+                        cookies = await page.context.cookies()
+                        self._result_queue.put({'cookies': cookies})
+                    except Exception as e:
+                        logger.error(f"Error getting cookies: {e}")
+                        self._result_queue.put({'cookies': []})
+
+                # Update tracked URL/title after any command
+                if page:
+                    try:
+                        self._current_url = page.url
+                        self._page_title = await page.title()
+                    except Exception:
+                        pass
+
         finally:
-            # Clean up page and browser
+            # Clean up CDP session, page, and browser
+            await self._handle_stop_screencast()
             if page:
                 try:
                     await page.close()
@@ -204,6 +308,139 @@ class SyncProxySession:
                 await automation.cleanup()
             except Exception:
                 pass
+
+    # -- CDP screencast + input handlers --
+
+    _cdp_session = None
+
+    async def _handle_start_screencast(self, page):
+        """Start CDP screencast, streaming JPEG frames to _frame_queue."""
+        if not page:
+            return
+        if self._cdp_session:
+            await self._handle_stop_screencast()
+
+        self._cdp_session = await page.context.new_cdp_session(page)
+
+        def on_frame(params):
+            frame_data = {
+                'data': params['data'],
+                'metadata': params.get('metadata', {}),
+                'sessionId': params.get('sessionId'),
+            }
+            self._screencast_metadata = params.get('metadata')
+            try:
+                if self._frame_queue.full():
+                    try:
+                        self._frame_queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                self._frame_queue.put_nowait(frame_data)
+            except queue.Full:
+                pass
+            # Ack the frame to keep receiving
+            try:
+                import asyncio as _aio
+                loop = _aio.get_event_loop()
+                if self._cdp_session:
+                    loop.create_task(
+                        self._cdp_session.send('Page.screencastFrameAck',
+                                               {'sessionId': params.get('sessionId', 0)})
+                    )
+            except Exception:
+                pass
+
+        self._cdp_session.on('Page.screencastFrame', on_frame)
+        await self._cdp_session.send('Page.startScreencast', {
+            'format': 'jpeg',
+            'quality': 60,
+            'maxWidth': 1920,
+            'maxHeight': 1080,
+            'everyNthFrame': 1,
+        })
+        logger.info(f"Screencast started for session {self.session_id}")
+
+    async def _handle_stop_screencast(self):
+        """Stop CDP screencast and close the CDP session."""
+        if self._cdp_session:
+            try:
+                await self._cdp_session.send('Page.stopScreencast')
+            except Exception:
+                pass
+            try:
+                await self._cdp_session.detach()
+            except Exception:
+                pass
+            self._cdp_session = None
+            logger.info(f"Screencast stopped for session {self.session_id}")
+
+    async def _handle_input(self, page, event: dict):
+        """Dispatch mouse/keyboard/scroll input via CDP."""
+        if not page or not self._cdp_session:
+            return
+        evt_type = event.get('type')
+        try:
+            if evt_type == 'mouse':
+                action = event.get('action', 'click')
+                x = event.get('x', 0)
+                y = event.get('y', 0)
+                button = event.get('button', 'left')
+                if action == 'click':
+                    await self._cdp_session.send('Input.dispatchMouseEvent', {
+                        'type': 'mousePressed', 'x': x, 'y': y,
+                        'button': button, 'clickCount': 1,
+                    })
+                    await self._cdp_session.send('Input.dispatchMouseEvent', {
+                        'type': 'mouseReleased', 'x': x, 'y': y,
+                        'button': button, 'clickCount': 1,
+                    })
+                elif action == 'down':
+                    await self._cdp_session.send('Input.dispatchMouseEvent', {
+                        'type': 'mousePressed', 'x': x, 'y': y,
+                        'button': button, 'clickCount': 1,
+                    })
+                elif action == 'up':
+                    await self._cdp_session.send('Input.dispatchMouseEvent', {
+                        'type': 'mouseReleased', 'x': x, 'y': y,
+                        'button': button, 'clickCount': 1,
+                    })
+                elif action == 'move':
+                    await self._cdp_session.send('Input.dispatchMouseEvent', {
+                        'type': 'mouseMoved', 'x': x, 'y': y,
+                    })
+            elif evt_type == 'key':
+                action = event.get('action', 'down')
+                key = event.get('key', '')
+                code = event.get('code', '')
+                text = event.get('text', '')
+                modifiers = event.get('modifiers', 0)
+                if action == 'down':
+                    params = {'type': 'keyDown', 'key': key, 'code': code, 'modifiers': modifiers}
+                    if text and len(text) == 1:
+                        params['text'] = text
+                    await self._cdp_session.send('Input.dispatchKeyEvent', params)
+                elif action == 'up':
+                    await self._cdp_session.send('Input.dispatchKeyEvent', {
+                        'type': 'keyUp', 'key': key, 'code': code, 'modifiers': modifiers,
+                    })
+                elif action == 'press':
+                    params = {'type': 'keyDown', 'key': key, 'code': code, 'modifiers': modifiers}
+                    if text and len(text) == 1:
+                        params['text'] = text
+                    await self._cdp_session.send('Input.dispatchKeyEvent', params)
+                    await self._cdp_session.send('Input.dispatchKeyEvent', {
+                        'type': 'keyUp', 'key': key, 'code': code, 'modifiers': modifiers,
+                    })
+            elif evt_type == 'scroll':
+                x = event.get('x', 0)
+                y = event.get('y', 0)
+                await self._cdp_session.send('Input.dispatchMouseEvent', {
+                    'type': 'mouseWheel', 'x': x, 'y': y,
+                    'deltaX': event.get('deltaX', 0),
+                    'deltaY': event.get('deltaY', 0),
+                })
+        except Exception as e:
+            logger.debug(f"Input dispatch error: {e}")
 
     # -- Async handler methods --
 
@@ -463,7 +700,8 @@ class SyncProxySession:
                 return {'status': 'waiting'}
 
             number_match_keywords = ['approve', 'authenticator app', 'confirm the number',
-                                     'select the number', 'enter the number']
+                                     'select the number', 'enter the number',
+                                     'authenticating on', 'authentication in progress']
             still_on_number_page = any(kw in body_lower for kw in number_match_keywords)
 
             if still_on_number_page:
@@ -881,6 +1119,9 @@ class SyncProxySession:
                     'match the number', 'enter the number shown', 'number matching',
                     'sign-in request we sent', 'approve the request',
                     'check your authenticator', 'open your authenticator',
+                    # PingID / PingOne
+                    'authenticating on', 'waiting for approval',
+                    'approve the authentication', 'authentication in progress',
                 ]
                 if any(kw in body_lower for kw in push_keywords):
                     import re
@@ -1008,7 +1249,8 @@ class SyncProxySession:
                     auth_progress_keywords = [
                         'sign in', 'sign-in', 'verify', 'verification',
                         'send a code', 'send notification', 'send a sign-in',
-                        'authenticator', 'approve', 'two-factor', '2-step',
+                        'authenticator', 'authenticating', 'approve',
+                        'two-factor', '2-step',
                         'one-time', 'otp', 'passkey', 'security key',
                         'allow access', 'permissions requested',
                     ]
@@ -1252,8 +1494,27 @@ class SyncProxyManager:
                     'created_at': s.created_at,
                     'last_activity': s.last_activity,
                     'age_seconds': time.time() - s.created_at,
+                    'state': s.state,
                 }
                 for s in self._sessions.values()
+            ]
+
+    def get_operator_sessions(self) -> list:
+        """Return sessions available for operator interaction."""
+        with self._lock:
+            return [
+                {
+                    'session_id': s.session_id,
+                    'target_url': s.target_url,
+                    'created_at': s.created_at,
+                    'last_activity': s.last_activity,
+                    'age_seconds': time.time() - s.created_at,
+                    'state': s.state,
+                    'current_url': s.get_current_url(),
+                    'page_title': s.get_page_title(),
+                }
+                for s in self._sessions.values()
+                if s.state in ('operator_available', 'screencast')
             ]
 
     def _cleanup_loop(self):
@@ -1270,11 +1531,14 @@ class SyncProxyManager:
                 time.sleep(1)
 
     def _expire_idle_sessions(self):
-        """Remove sessions that have been idle beyond the timeout."""
+        """Remove sessions that have been idle beyond the timeout.
+        Sessions in 'screencast' state are protected — operator is active."""
         now = time.time()
         expired = []
         with self._lock:
             for sid, sess in self._sessions.items():
+                if sess.state == 'screencast':
+                    continue
                 if now - sess.last_activity > self._session_timeout:
                     expired.append(sid)
         for sid in expired:

@@ -121,6 +121,12 @@ def create_admin_app(skip_plugin_sync=False):
     csrf.init_app(app)
     app.config['WTF_CSRF_ENABLED'] = True
     app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit on CSRF tokens
+
+    # Initialize flask-sock for WebSocket support (CDP screencast)
+    from flask_sock import Sock
+    sock = Sock(app)
+    from api.routes import register_websocket_routes
+    register_websocket_routes(sock)
     
     # Session security
     app.config['SESSION_COOKIE_HTTPONLY'] = True

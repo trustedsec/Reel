@@ -82,21 +82,66 @@
             </div>
         </div>
 
-        <!-- API Status -->
+        <!-- Live Browser Sessions -->
         <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg transition-colors duration-200">
             <div class="p-5">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
                         <div class="w-8 h-8 bg-purple-500 dark:bg-purple-600 rounded-full flex items-center justify-center">
-                            <i class="fas fa-heartbeat text-white text-sm"></i>
+                            <i class="fas fa-desktop text-white text-sm"></i>
                         </div>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">API Status</dt>
-                            <dd class="text-lg font-medium text-green-600 dark:text-green-400">Online</dd>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Browser Sessions</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
+                                <span id="dash-live-sessions">{{ live_sessions or 0 }}</span>
+                                <span class="text-sm text-gray-500 dark:text-gray-400">live</span>
+                                / <span id="dash-total-sessions">{{ total_sessions or 0 }}</span>
+                                <span class="text-sm text-gray-500 dark:text-gray-400">total</span>
+                            </dd>
                         </dl>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resource Monitor -->
+    <div class="bg-white dark:bg-gray-800 shadow rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">System Resources</h3>
+                <span class="text-xs text-gray-400 dark:text-gray-500" id="resource-updated"></span>
+            </div>
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <!-- Memory -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">Memory</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400" id="res-mem-text">—</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div id="res-mem-bar" class="h-2.5 rounded-full bg-blue-500 transition-all duration-500" style="width:0%"></div>
+                    </div>
+                </div>
+                <!-- CPU Load -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">CPU Load</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400" id="res-cpu-text">—</span>
+                    </div>
+                    <div class="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+                        <div id="res-cpu-bar" class="h-2.5 rounded-full bg-green-500 transition-all duration-500" style="width:0%"></div>
+                    </div>
+                </div>
+                <!-- Browser Sessions -->
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <span class="text-sm font-medium text-gray-600 dark:text-gray-300">Browser Sessions</span>
+                        <span class="text-sm text-gray-500 dark:text-gray-400" id="res-sessions-text">—</span>
+                    </div>
+                    <div id="res-sessions-list" class="space-y-1 text-xs text-gray-500 dark:text-gray-400 mt-2"></div>
                 </div>
             </div>
         </div>
@@ -163,4 +208,60 @@
     </div>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function loadResources() {
+    const token = document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const headers = { 'Accept': 'application/json' };
+    if (token) headers['X-CSRFToken'] = token;
+    fetch('/api/system/resources', { credentials: 'same-origin', headers })
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(data => {
+            const sys = data.system || {};
+            // Memory
+            if (sys.memory_percent !== undefined) {
+                document.getElementById('res-mem-text').textContent = sys.memory_used_mb + ' / ' + sys.memory_total_mb + ' MB (' + sys.memory_percent + '%)';
+                const bar = document.getElementById('res-mem-bar');
+                bar.style.width = sys.memory_percent + '%';
+                bar.className = bar.className.replace(/bg-\w+-500/g, '') + (sys.memory_percent > 80 ? ' bg-red-500' : sys.memory_percent > 60 ? ' bg-yellow-500' : ' bg-blue-500');
+            }
+            // CPU
+            if (sys.load_1m !== undefined) {
+                const cpuPct = Math.min(100, Math.round(sys.load_1m / (sys.cpu_count || 1) * 100));
+                document.getElementById('res-cpu-text').textContent = sys.load_1m.toFixed(2) + ' / ' + (sys.cpu_count || '?') + ' cores';
+                const cpuBar = document.getElementById('res-cpu-bar');
+                cpuBar.style.width = cpuPct + '%';
+                cpuBar.className = cpuBar.className.replace(/bg-\w+-500/g, '') + (cpuPct > 80 ? ' bg-red-500' : cpuPct > 60 ? ' bg-yellow-500' : ' bg-green-500');
+            }
+            // Sessions
+            const sessions = data.browser_sessions || [];
+            const count = data.browser_session_count || 0;
+            document.getElementById('res-sessions-text').textContent = count + ' active';
+            document.getElementById('dash-live-sessions').textContent = sessions.filter(s => s.state === 'operator_available' || s.state === 'screencast').length;
+            document.getElementById('dash-total-sessions').textContent = count;
+            const list = document.getElementById('res-sessions-list');
+            if (sessions.length === 0) {
+                list.innerHTML = '<span class="text-gray-400 dark:text-gray-500">No active sessions</span>';
+            } else {
+                list.innerHTML = sessions.map(s => {
+                    const age = Math.round(s.age_seconds || 0);
+                    const ageStr = age < 60 ? age + 's' : Math.round(age / 60) + 'm';
+                    const stateColors = { screencast: 'text-blue-500', operator_available: 'text-green-500', running: 'text-yellow-500' };
+                    const color = stateColors[s.state] || 'text-gray-500';
+                    const url = s.target_url ? s.target_url.replace(/^https?:\/\//, '').slice(0, 30) : '—';
+                    return '<div class="flex items-center gap-2"><i class="fas fa-circle text-[6px] ' + color + '"></i><span class="font-mono">' + s.session_id.slice(0, 8) + '</span><span>' + s.state + '</span><span class="truncate max-w-[120px]" title="' + (s.target_url || '') + '">' + url + '</span><span>' + ageStr + '</span></div>';
+                }).join('');
+            }
+            document.getElementById('resource-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        })
+        .catch(err => console.error('Resource load error:', err));
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadResources();
+    setInterval(loadResources, 10000);
+});
+</script>
 {% endblock %}

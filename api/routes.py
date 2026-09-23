@@ -6073,6 +6073,211 @@ def mms_card_preview(config_id):
     return Response(png_bytes, mimetype='image/png')
 
 
+# --- System resource monitoring ---
+
+@api_bp.route('/system/resources', methods=['GET'])
+@require_auth
+def system_resources():
+    """System resource usage including per-browser-session stats."""
+    import os
+    try:
+        system = {}
+        # System-wide memory from /proc/meminfo (Linux/Docker)
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                meminfo = {}
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        meminfo[parts[0].rstrip(':')] = int(parts[1]) * 1024  # kB to bytes
+            total = meminfo.get('MemTotal', 0)
+            available = meminfo.get('MemAvailable', 0)
+            system['memory_total_mb'] = round(total / 1048576)
+            system['memory_used_mb'] = round((total - available) / 1048576)
+            system['memory_percent'] = round((total - available) / total * 100, 1) if total else 0
+        except (FileNotFoundError, ValueError):
+            pass
+
+        # CPU usage from /proc/stat (instant snapshot — shows overall load)
+        try:
+            with open('/proc/loadavg', 'r') as f:
+                parts = f.read().split()
+                system['load_1m'] = float(parts[0])
+                system['load_5m'] = float(parts[1])
+                system['load_15m'] = float(parts[2])
+            system['cpu_count'] = os.cpu_count() or 1
+        except (FileNotFoundError, ValueError):
+            pass
+
+        # Browser session stats
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        sessions = []
+        if manager:
+            for s_info in manager.get_sessions_summary():
+                sess = manager.get_session(s_info['session_id'])
+                if not sess:
+                    continue
+                session_data = {
+                    'session_id': s_info['session_id'],
+                    'state': s_info.get('state', 'unknown'),
+                    'target_url': s_info.get('target_url', ''),
+                    'age_seconds': s_info.get('age_seconds', 0),
+                }
+                # Try to get browser process memory via /proc
+                thread = getattr(sess, '_thread', None)
+                if thread and thread.is_alive():
+                    session_data['thread_alive'] = True
+                sessions.append(session_data)
+
+        return jsonify({
+            'system': system,
+            'browser_sessions': sessions,
+            'browser_session_count': len(sessions),
+        })
+    except Exception as e:
+        logger.exception("Error getting system resources: %s", e)
+        return jsonify({'error': str(e)}), 500
+
+
+# --- Live session endpoints (screencast, close, cookies) ---
+
+@api_bp.route('/sync-proxy-sessions/operator', methods=['GET'])
+@require_auth
+def list_operator_sessions():
+    """List sessions available for operator interaction."""
+    try:
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        if manager:
+            sessions = manager.get_operator_sessions()
+        else:
+            sessions = []
+        return jsonify({'sessions': sessions})
+    except Exception as e:
+        logger.exception("Error listing operator sessions: %s", e)
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/sync-proxy-sessions/<session_id>/close', methods=['POST'])
+@require_auth
+def close_sync_proxy_session(session_id):
+    """Operator explicitly closes a live browser session."""
+    try:
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        if not manager:
+            return jsonify({'error': 'Proxy manager not running'}), 503
+        session = manager.get_session(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        manager.remove_session(session_id)
+        return jsonify({'status': 'closed'})
+    except Exception as e:
+        logger.exception("Error closing sync proxy session: %s", e)
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/sync-proxy-sessions/<session_id>/cookies', methods=['GET'])
+@require_auth
+def export_sync_proxy_cookies(session_id):
+    """Export cookies from a live browser session."""
+    try:
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        if not manager:
+            return jsonify({'error': 'Proxy manager not running'}), 503
+        session = manager.get_session(session_id)
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+        if session.state not in ('operator_available', 'screencast'):
+            return jsonify({'error': 'Session not available for export'}), 409
+        cookies = session.export_cookies(timeout=10)
+        if cookies is None:
+            return jsonify({'error': 'Timeout exporting cookies'}), 504
+        return jsonify({'cookies': cookies})
+    except Exception as e:
+        logger.exception("Error exporting cookies: %s", e)
+        return jsonify({'error': str(e)}), 500
+
+
+def register_websocket_routes(sock):
+    """Register WebSocket routes on the flask-sock instance.
+    Called from app.py after Sock(app) is created."""
+    import json
+    import threading
+
+    @sock.route('/api/sync-proxy-sessions/<session_id>/screencast')
+    def screencast_ws(ws, session_id):
+        from flask_login import current_user
+        if not current_user.is_authenticated:
+            ws.close(1008, 'Unauthorized')
+            return
+
+        from workflows.sync_proxy_manager import get_sync_proxy_manager
+        manager = get_sync_proxy_manager()
+        if not manager:
+            ws.close(1011, 'Proxy manager not running')
+            return
+
+        session = manager.get_session(session_id)
+        if not session:
+            ws.close(1008, 'Session not found')
+            return
+
+        if session.state not in ('operator_available', 'screencast'):
+            ws.close(1008, 'Session not available')
+            return
+
+        session.start_screencast()
+        stop_event = threading.Event()
+
+        def frame_sender():
+            while not stop_event.is_set():
+                frame_data = session.get_frame(timeout=1.0)
+                if frame_data is None:
+                    continue
+                try:
+                    ws.send(json.dumps({
+                        'type': 'frame',
+                        'data': frame_data['data'],
+                        'metadata': frame_data.get('metadata', {}),
+                    }))
+                except Exception:
+                    stop_event.set()
+                    break
+
+        sender_thread = threading.Thread(target=frame_sender, daemon=True)
+        sender_thread.start()
+
+        try:
+            while not stop_event.is_set():
+                try:
+                    raw = ws.receive(timeout=30)
+                except Exception:
+                    break
+                if raw is None:
+                    break
+                try:
+                    msg = json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    continue
+                msg_type = msg.get('type')
+                if msg_type in ('mouse', 'key', 'scroll'):
+                    session.send_input(msg)
+                elif msg_type == 'navigate':
+                    url = msg.get('url', '')
+                    if url:
+                        session.navigate(url)
+        finally:
+            stop_event.set()
+            try:
+                session.stop_screencast()
+            except Exception:
+                pass
+            sender_thread.join(timeout=3)
+
+
 @api_bp.errorhandler(500)
 def handle_server_error(e):
     """Handle 500 errors"""

@@ -30,6 +30,7 @@ class CampaignCreateRequest(BaseModel):
     gate_mode: Optional[str] = Field(None)
     gate_redirect_url: Optional[str] = Field(None, max_length=500)
     gate_template_id: Optional[int] = None
+    allowed_proxy_groups: Optional[List[str]] = Field(None, description="Proxy path groups to enable: tracking, credential_proxy, media")
 
     @validator('name')
     def validate_name(cls, v):
@@ -88,6 +89,7 @@ class CampaignUpdateRequest(BaseModel):
     gate_mode: Optional[str] = Field(None)
     gate_redirect_url: Optional[str] = Field(None, max_length=500)
     gate_template_id: Optional[int] = None
+    allowed_proxy_groups: Optional[List[str]] = Field(None, description="Proxy path groups to enable: tracking, credential_proxy, media")
 
     @validator('name')
     def validate_name(cls, v):

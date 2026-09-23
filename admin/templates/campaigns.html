@@ -80,14 +80,12 @@
             <div class="p-5">
                 <div class="flex items-center">
                     <div class="flex-shrink-0">
-                        <i class="fas fa-edit text-gray-400 dark:text-gray-500 text-2xl"></i>
+                        <i class="fas fa-desktop text-purple-400 dark:text-purple-300 text-2xl"></i>
                     </div>
                     <div class="ml-5 w-0 flex-1">
                         <dl>
-                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Draft</dt>
-                            <dd class="text-lg font-medium text-gray-900 dark:text-white">
-                                {{ campaigns.items | selectattr('status', 'equalto', 'draft') | list | length }}
-                            </dd>
+                            <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Live Sessions</dt>
+                            <dd class="text-lg font-medium text-gray-900 dark:text-white" id="campaigns-live-count">—</dd>
                         </dl>
                     </div>
                 </div>
@@ -449,5 +447,21 @@ document.getElementById('deleteModal').addEventListener('click', function(e) {
         hideDeleteModal();
     }
 });
+
+(function() {
+    function updateLiveCount() {
+        var el = document.getElementById('campaigns-live-count');
+        if (!el) return;
+        var token = document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+        var headers = { 'Accept': 'application/json' };
+        if (token) headers['X-CSRFToken'] = token;
+        fetch('/api/sync-proxy-sessions/operator', { credentials: 'same-origin', headers: headers })
+            .then(function(r) { return r.json(); })
+            .then(function(data) { el.textContent = (data.sessions || []).length; })
+            .catch(function() { el.textContent = '—'; });
+    }
+    updateLiveCount();
+    setInterval(updateLiveCount, 10000);
+})();
 </script>
 {% endblock %}

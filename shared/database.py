@@ -192,6 +192,23 @@ def init_app(app):
             logger.warning(f"Could not migrate gate token columns: {e}")
             db.session.rollback()
 
+        # Migrate: Add allowed_proxy_groups column to campaigns if it doesn't exist
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            if 'campaigns' in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns('campaigns')]
+                if 'allowed_proxy_groups' not in columns:
+                    logger = logging.getLogger(__name__)
+                    logger.info("Adding allowed_proxy_groups column to campaigns...")
+                    db.session.execute(text("ALTER TABLE campaigns ADD COLUMN allowed_proxy_groups JSON DEFAULT '[]'"))
+                    db.session.commit()
+                    logger.info("Added allowed_proxy_groups column")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Could not migrate allowed_proxy_groups column: {e}")
+            db.session.rollback()
+
         # Migrate: Add phone column to tracked_users if it doesn't exist
         try:
             from sqlalchemy import inspect, text
@@ -426,7 +443,10 @@ class Campaign(db.Model):
     gate_mode = Column(String(20), default='template')  # 'template' or 'redirect'
     gate_redirect_url = Column(String(500), nullable=True)
     gate_template_id = Column(Integer, ForeignKey('templates.id'), nullable=True)
-    
+
+    # Caddy proxy path filtering (inbound campaigns only)
+    allowed_proxy_groups = Column(JSON, default=list)  # e.g. ["tracking", "media"]
+
     # Relationships
     created_by = relationship('User', foreign_keys=[created_by_id], backref='campaigns')
     phishing_approved_by = relationship('User', foreign_keys=[phishing_approved_by_id], backref='approved_campaigns')
@@ -485,6 +505,7 @@ class Campaign(db.Model):
             'gate_redirect_url': getattr(self, 'gate_redirect_url', None),
             'gate_template_id': getattr(self, 'gate_template_id', None),
             'gate_template_name': self.gate_template.name if getattr(self, 'gate_template', None) else None,
+            'allowed_proxy_groups': getattr(self, 'allowed_proxy_groups', []) or [],
         }
 
         if include_template:

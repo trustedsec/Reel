@@ -75,9 +75,10 @@
                 <i class="fas fa-chart-line mr-2"></i>
                 Tracking
             </a>
-            <a href="{{ url_for('admin.campaign_credential_proxy', campaign_id=campaign.id) }}" class="inline-flex items-center px-4 py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors duration-200">
+            <a href="{{ url_for('admin.campaign_credential_proxy', campaign_id=campaign.id) }}" class="relative inline-flex items-center px-4 py-2 border border-blue-300 dark:border-blue-600 rounded-md shadow-sm text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors duration-200">
                 <i class="fas fa-key mr-2"></i>
                 Credential proxy
+                <span id="live-session-badge" class="hidden absolute -top-2 -right-2 px-1.5 py-0.5 text-xs font-bold rounded-full bg-green-500 text-white"></span>
             </a>
             {% endif %}
             {% if campaign.campaign_type == 'outbound' %}
@@ -1527,9 +1528,31 @@ function loadCredentials() {
 document.addEventListener('DOMContentLoaded', function() {
     loadRecentEvents();
     loadCredentials();
+    loadLiveSessionBadge();
     // Auto-refresh every 30 seconds
     setInterval(loadRecentEvents, 30000);
     setInterval(loadCredentials, 30000);
+    setInterval(loadLiveSessionBadge, 10000);
 });
+
+function loadLiveSessionBadge() {
+    const badge = document.getElementById('live-session-badge');
+    if (!badge) return;
+    const token = document.querySelector('meta[name="csrf-token"]') && document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    const headers = { 'Accept': 'application/json' };
+    if (token) headers['X-CSRFToken'] = token;
+    fetch('/api/sync-proxy-sessions/operator', { credentials: 'same-origin', headers })
+        .then(r => r.json())
+        .then(data => {
+            const count = (data.sessions || []).length;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.classList.remove('hidden');
+            } else {
+                badge.classList.add('hidden');
+            }
+        })
+        .catch(() => {});
+}
 </script>
 {% endblock %}

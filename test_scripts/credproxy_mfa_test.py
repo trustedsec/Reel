@@ -389,4 +389,6 @@ if __name__ == "__main__":
     print("  Passkey flow:              http://127.0.0.1:5001/login-passkey")
     print()
     print("For push flows, after email submission the approve URL is printed here.")
-    app.run(host="127.0.0.1", port=5001, debug=True)
+    import os
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    app.run(host=host, port=5001, debug=True)
