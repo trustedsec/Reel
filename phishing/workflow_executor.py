@@ -365,9 +365,10 @@ class WorkflowExecutor:
         """
         # If a plugin rendered its own page (e.g. MFA prompt), honour that
         # over any redirect that a downstream node may have set.
-        logger.info(
+        logger.warning(
             f"_context_to_response: _stop_workflow={context.get('_stop_workflow')}, "
             f"has_html={'_response_html' in context}, "
+            f"html_len={len(context.get('_response_html', ''))}, "
             f"has_redirect={'_response_redirect' in context}"
         )
         if context.get('_stop_workflow') and '_response_html' in context:
@@ -388,47 +389,51 @@ class WorkflowExecutor:
                 logger.debug(f"Processing redirect: {redirect_url}")
             # Handle relative URLs
             if redirect_url.startswith('/'):
-                # Relative URL - if it's just '/', redirect back to campaign page
+                # Relative URL — keep it relative so the browser stays on whatever
+                # domain the visitor accessed through (CDN, Front Door, direct).
+                # Building absolute URLs from X-Campaign-Domain would redirect the
+                # visitor from the CDN domain to the backend origin.
+                campaign_domain = request.headers.get('X-Campaign-Domain') or getattr(g, 'campaign_domain', None)
+
                 if redirect_url == '/':
-                    campaign_uid = context.get('campaign', {}).get('uid')
-                    if campaign_uid:
-                        redirect_url = f'/{campaign_uid}'
-                    else:
-                        # Fallback: use default success page instead of redirecting
-                        logger.warning("Redirect URL is '/' but no campaign UID available, using default success page")
-                        if 'captured_credentials' in context:
-                            default_success_html = """
-                            <!DOCTYPE html>
-                            <html>
-                            <head>
-                                <title>Success</title>
-                                <style>
-                                    body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
-                                    .success { color: #27ae60; }
-                                </style>
-                            </head>
-                            <body>
-                                <h1 class="success">Success</h1>
-                                <p>Your information has been submitted successfully.</p>
-                            </body>
-                            </html>
-                            """
-                            return make_response(default_success_html, 200)
-                        return self._error_response("Invalid redirect configuration", 500)
-                else:
-                    # Relative URL like '/path' - make it relative to current request
-                    # Check if we have domain from Caddy header or g (e.g. Host-based identification)
-                    campaign_domain = request.headers.get('X-Campaign-Domain') or getattr(g, 'campaign_domain', None)
-                    
                     if campaign_domain:
-                        # Use domain-based URL (Caddy will route correctly)
-                        scheme = 'https' if request.is_secure else 'http'
-                        redirect_url = f'{scheme}://{campaign_domain}{redirect_url}'
+                        # Domain-based routing — '/' is correct as-is
+                        pass
                     else:
-                        # Fallback to UID-based URL
+                        campaign_uid = context.get('campaign', {}).get('uid')
+                        if campaign_uid:
+                            # UID-based routing — must include UID in path
+                            redirect_url = f'/{campaign_uid}'
+                        else:
+                            # Fallback: use default success page instead of redirecting
+                            logger.warning("Redirect URL is '/' but no campaign UID available, using default success page")
+                            if 'captured_credentials' in context:
+                                default_success_html = """
+                                <!DOCTYPE html>
+                                <html>
+                                <head>
+                                    <title>Success</title>
+                                    <style>
+                                        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+                                        .success { color: #27ae60; }
+                                    </style>
+                                </head>
+                                <body>
+                                    <h1 class="success">Success</h1>
+                                    <p>Your information has been submitted successfully.</p>
+                                </body>
+                                </html>
+                                """
+                                return make_response(default_success_html, 200)
+                            return self._error_response("Invalid redirect configuration", 500)
+                else:
+                    if campaign_domain:
+                        # Domain-based routing — relative path works as-is
+                        pass
+                    else:
+                        # UID-based routing — prepend campaign UID
                         campaign_uid = context.get('campaign', {}).get('uid')
                         if campaign_uid and not redirect_url.startswith(f'/{campaign_uid}'):
-                            # Prepend campaign UID if not already present
                             redirect_url = f'/{campaign_uid}{redirect_url}'
             elif not redirect_url.startswith(('http://', 'https://')):
                 # Not a relative URL and not absolute - treat as domain and prepend http://

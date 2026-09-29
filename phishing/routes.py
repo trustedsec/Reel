@@ -113,23 +113,29 @@ def load_campaign():
 
 def get_campaign_url(campaign_uid: str, path: str = '') -> str:
     """
-    Generate campaign URL, preferring domain-based when available
+    Generate a redirect-safe campaign URL.
+
+    Uses relative paths so the browser stays on whatever domain the visitor
+    accessed through (important when behind a CDN like Azure Front Door or
+    Cloudflare — an absolute URL built from X-Campaign-Domain would redirect
+    the visitor from the CDN domain to the backend origin).
 
     Args:
         campaign_uid: Campaign UID
         path: Optional path to append
 
     Returns:
-        Full campaign URL
+        Relative campaign URL suitable for redirect()
     """
-    # Check for domain from Caddy header, or g when identified via Host
+    # Check for domain-based routing (Caddy header or Host-based identification)
     campaign_domain = request.headers.get('X-Campaign-Domain') or getattr(g, 'campaign_domain', None)
 
     if campaign_domain:
-        scheme = 'https' if request.is_secure else 'http'
-        return f'{scheme}://{campaign_domain}{path}'
+        # Domain-based routing — Caddy routes by host, so a relative path
+        # is sufficient and keeps the visitor on their current domain
+        return path or '/'
     else:
-        # Fallback to UID-based URL
+        # UID-based routing — must include campaign UID in the path
         return f'/{campaign_uid}{path}'
 
 

@@ -283,24 +283,38 @@ class AIFormDetector:
         Returns:
             Dictionary mapping field names to lists of selectors to try in order
         """
-        # Common selectors for login forms (ordered by likelihood)
+        # Common selectors for login forms (ordered by specificity).
+        # Named/typed selectors first, then aria/label-based, then generic
+        # positional selectors as last resort (covers SPAs with custom markup).
         selectors = {
             'email': [
                 'input[name="email"]',
                 'input[type="email"]',
                 'input[name="username"]',
+                'input[name="loginId"]',
+                'input[name="identifier"]',
+                'input[name="login"]',
+                'input[name="user"]',
                 'input[id*="email"]',
                 'input[id*="username"]',
                 'input[id*="user"]',
+                'input[id*="login"]',
                 'input[placeholder*="email" i]',
                 'input[placeholder*="username" i]',
-                'input[placeholder*="user" i]'
+                'input[placeholder*="user" i]',
+                'input[aria-label*="email" i]',
+                'input[aria-label*="username" i]',
+                'input[aria-label*="user" i]',
+                'input[autocomplete="username"]',
+                'input[autocomplete="email"]',
+                'input[type="text"]',
             ],
             'password': [
                 'input[type="password"]',
                 'input[name="password"]',
                 'input[id*="password"]',
-                'input[id*="pass"]'
+                'input[id*="pass"]',
+                'input[autocomplete="current-password"]',
             ],
             'submit_button': [
                 'button[type="submit"]',
@@ -310,7 +324,10 @@ class AIFormDetector:
                 'button:has-text("Login")',
                 'button:has-text("Submit")',
                 'button:has-text("Sign In")',
-                'button:has-text("Log In")'
+                'button:has-text("Log In")',
+                'button:has-text("Sign On")',
+                'button:has-text("Next")',
+                'button:has-text("Continue")',
             ]
         }
         

@@ -20,9 +20,11 @@ from cryptography.x509.oid import NameOID
 logger = logging.getLogger(__name__)
 
 # Paths that are always proxied to Flask for every inbound campaign.
-# /assets/* and /static/* are excluded — they're served by Caddy file_server
-# upstream and never reach the proxy subroute.
-PROXY_BASE_PATHS = ["/", "/health", "/favicon.ico", "/robots.txt"]
+# /static/* is excluded — served by Caddy file_server and never reaches Flask.
+# /assets/* IS proxied so Flask can serve campaign-uploaded assets from storage.
+# When a template file_server is present (with pass_thru), it serves template
+# assets from disk first; misses fall through to Flask.
+PROXY_BASE_PATHS = ["/", "/health", "/favicon.ico", "/robots.txt", "/assets/*"]
 
 # Optional path groups that can be enabled per-campaign.
 PROXY_PATH_GROUPS = {
@@ -472,6 +474,7 @@ class CaddyManager:
             "/js/*",
             "/static/*",
             "/assets/*",
+            f"/{campaign.uid}/assets/*",
             "/media/*",
             "/m/*",
             "/favicon.ico",
@@ -571,16 +574,12 @@ class CaddyManager:
                 "match": [{"path": ["/assets/*"]}],
                 "handle": [
                     {
-                        "handler": "rewrite",
-                        "strip_path_prefix": "/assets"
-                    },
-                    {
                         "handler": "file_server",
-                        "root": str(template_assets_dir),
-                        "index_names": []
+                        "root": str(template_assets_dir.parent),
+                        "index_names": [],
+                        "pass_thru": True
                     }
                 ],
-                "terminal": True
             })
 
         # Serve global static assets

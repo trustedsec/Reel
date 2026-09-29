@@ -444,6 +444,110 @@ class SyncProxySession:
 
     # -- Async handler methods --
 
+    async def _wait_for_page_ready(self, page, timeout: float = 8.0) -> None:
+        """Wait for the page to render interactive content.
+        SPAs (PingOne, Okta, MS) load an HTML shell first, then a JS bundle
+        renders the real form asynchronously.  networkidle fires too early.
+        Poll until we see a real input or button, or hit the timeout."""
+        interval = 0.3
+        elapsed = 0.0
+        while elapsed < timeout:
+            try:
+                el = await page.query_selector('input, button, [role="button"]')
+                if el:
+                    return
+            except Exception:
+                pass
+            await asyncio.sleep(interval)
+            elapsed += interval
+        logger.warning(f"[wait-for-ready] timed out after {timeout}s waiting for interactive elements")
+
+    async def _direct_positional_fill(self, page, remaining_creds: dict) -> list:
+        """Last-resort fill: find visible inputs by type/position, ignoring
+        names and attributes entirely.  Checks iframes too.
+        Returns list of filled field names."""
+        filled = await self._try_fill_on_frame(page, remaining_creds)
+        if filled:
+            return filled
+
+        # Main page had no usable inputs — check iframes
+        try:
+            for frame in page.frames:
+                if frame == page.main_frame:
+                    continue
+                logger.warning(f"[direct-fill] trying iframe: {frame.url}")
+                filled = await self._try_fill_on_frame(frame, remaining_creds)
+                if filled:
+                    return filled
+        except Exception as e:
+            logger.warning(f"[direct-fill] iframe scan error: {e}")
+        return []
+
+    async def _try_fill_on_frame(self, frame, remaining_creds: dict) -> list:
+        """Try to fill credentials on a single frame/page by input position.
+        Uses Playwright's css=* >> input piercing to reach shadow DOM."""
+        filled = []
+        try:
+            # Try standard DOM first, then shadow-piercing selectors
+            all_inputs = await frame.query_selector_all('input')
+            if not all_inputs:
+                # Pierce shadow DOM with Playwright's >> combinator
+                all_inputs = await frame.query_selector_all('*:is(input)')
+            if not all_inputs:
+                # Broader shadow pierce: locate_all with css piercing
+                try:
+                    all_inputs = await frame.query_selector_all('css=* >> input')
+                except Exception:
+                    pass
+
+            text_inputs = []
+            password_inputs = []
+            for inp in all_inputs:
+                try:
+                    if not await inp.is_visible():
+                        continue
+                    bbox = await inp.bounding_box()
+                    if not bbox or bbox['width'] < 10 or bbox['height'] < 10:
+                        continue
+                except Exception:
+                    continue
+                inp_type = (await inp.get_attribute('type') or 'text').lower()
+                if inp_type == 'password':
+                    password_inputs.append(inp)
+                elif inp_type in ('text', 'email', 'tel', ''):
+                    text_inputs.append(inp)
+
+            logger.warning(
+                f"[direct-fill] found {len(text_inputs)} text inputs, "
+                f"{len(password_inputs)} password inputs "
+                f"(total {len(all_inputs)} inputs on frame)"
+            )
+
+            if not text_inputs and not password_inputs:
+                logger.warning("[direct-fill] no visible inputs found on frame")
+
+            uname_key = 'username' if 'username' in remaining_creds else (
+                'email' if 'email' in remaining_creds else None
+            )
+            if uname_key and text_inputs:
+                try:
+                    await text_inputs[0].fill(remaining_creds[uname_key])
+                    filled.append(uname_key)
+                    logger.warning(f"[direct-fill] filled {uname_key}")
+                except Exception as e:
+                    logger.warning(f"[direct-fill] fill {uname_key} failed: {e}")
+
+            if 'password' in remaining_creds and password_inputs:
+                try:
+                    await password_inputs[0].fill(remaining_creds['password'])
+                    filled.append('password')
+                    logger.warning(f"[direct-fill] filled password")
+                except Exception as e:
+                    logger.warning(f"[direct-fill] fill password failed: {e}")
+        except Exception as e:
+            logger.warning(f"[direct-fill] frame scan error: {e}")
+        return filled
+
     async def _handle_initial(self, automation, ai_detector, existing_page):
         """Navigate to target, detect form, fill credentials, submit, analyse.
 
@@ -457,6 +561,10 @@ class SyncProxySession:
 
         # Navigate
         page = await automation.navigate_to_site(self.target_url, timeout=timeout_ms)
+
+        # Wait for SPA rendering — networkidle fires after downloads finish
+        # but before JS frameworks render the actual form into the DOM.
+        await self._wait_for_page_ready(page)
 
         # Track which standard credential fields still need to be filled
         remaining_creds = dict(self.credentials)  # shallow copy
@@ -504,18 +612,28 @@ class SyncProxySession:
             logger.info(f"Multi-step login step {step + 1}: fill result: {fill_result}")
 
             if not fill_result['filled']:
-                # AI/fallback returned selectors but they didn't match anything on
-                # the page — try interstitial detection before giving up.
-                clicked = await self._handle_interstitial(page)
-                if clicked:
-                    logger.info(f"Multi-step login step {step + 1}: handled interstitial after empty fill, continuing")
-                    await self._record_step_screenshot(
-                        step_screenshots, step, page,
-                        f"Step {step + 1}: clicked interstitial",
-                    )
-                    continue
-                logger.info(f"Multi-step login step {step + 1}: nothing filled and no interstitial, breaking")
-                break
+                # Selector-based fill failed — try direct positional fill as
+                # last resort.  On a login page the first visible text input
+                # is almost always username/email, and the first password
+                # input is the password field.
+                direct_filled = await self._direct_positional_fill(
+                    page, remaining_creds
+                )
+                if direct_filled:
+                    logger.warning(f"Multi-step login step {step + 1}: direct positional fill succeeded: {direct_filled}")
+                    fill_result = {'filled': direct_filled, 'not_found': []}
+                else:
+                    # Neither selector nor direct fill worked — try interstitial
+                    clicked = await self._handle_interstitial(page)
+                    if clicked:
+                        logger.info(f"Multi-step login step {step + 1}: handled interstitial after empty fill, continuing")
+                        await self._record_step_screenshot(
+                            step_screenshots, step, page,
+                            f"Step {step + 1}: clicked interstitial",
+                        )
+                        continue
+                    logger.info(f"Multi-step login step {step + 1}: nothing filled and no interstitial, breaking")
+                    break
 
             # Capture step screenshot (before submit) for debugging
             await self._record_step_screenshot(
@@ -534,6 +652,8 @@ class SyncProxySession:
                 await page.wait_for_load_state('domcontentloaded', timeout=2000)
             except Exception:
                 pass
+            # Wait for next page's SPA to render
+            await self._wait_for_page_ready(page)
 
             # Safety net: if the new page still has a visible password input,
             # our earlier "password fill" was bogus (e.g. hidden field on email-only page).

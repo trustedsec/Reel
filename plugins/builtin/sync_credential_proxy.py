@@ -320,12 +320,18 @@ class SyncCredentialProxyPlugin(BasePlugin):
             context['sync_proxy_success'] = False
             context['_stop_workflow'] = True
             context.pop('_response_redirect', None)
-            context['_response_html'] = self._render_number_matching_page(
+            rendered_html = self._render_number_matching_page(
                 config, context,
                 display_value=result.get('display_value', ''),
                 prompt_text=result.get('prompt_text', 'Approve the sign-in request'),
                 session_id=proxy_session.session_id,
             )
+            logger.warning(
+                f"[SyncProxy] needs_display: rendered_html length={len(rendered_html) if rendered_html else 0}, "
+                f"mfa_template_source={config.get('mfa_template_source')}, "
+                f"mfa_template_id={config.get('mfa_template_id')}"
+            )
+            context['_response_html'] = rendered_html
             self._set_session_key(context, '_sync_proxy_session_id', proxy_session.session_id)
             self._create_job_record(context, config, result, 'mfa_prompted')
 
@@ -510,12 +516,92 @@ class SyncCredentialProxyPlugin(BasePlugin):
             html = SyncCredentialProxyPlugin._render_jinja(
                 template.template_html, template_vars, context
             )
-            # Inject polling script for number-matching pages
+            html = SyncCredentialProxyPlugin._inline_template_assets(html, template_id)
             html = SyncCredentialProxyPlugin._inject_poll_script(html, template_vars)
             return html
         except Exception as e:
             logger.error(f"Library MFA template rendering failed: {e}")
             return SyncCredentialProxyPlugin._render_auto_mfa_page(template_vars)
+
+    @staticmethod
+    def _inline_template_assets(html: str, template_id) -> str:
+        """Inline CSS and images from a template's asset directory.
+        CSS <link> tags become <style> blocks. Image src/url() references
+        to /assets/* become base64 data: URIs. This makes the rendered
+        MFA page fully self-contained."""
+        import re
+        import base64
+        import mimetypes
+        from pathlib import Path
+        from shared.config import Config
+
+        config = Config()
+        assets_dir = config.TEMPLATES_FOLDER / str(template_id) / "assets"
+        if not assets_dir.exists():
+            return html
+
+        def _read_asset(filename: str) -> Optional[bytes]:
+            """Safely read a file from the template assets directory."""
+            safe_name = Path(filename).name
+            path = assets_dir / safe_name
+            if path.exists() and path.is_file():
+                try:
+                    return path.read_bytes()
+                except Exception:
+                    pass
+            return None
+
+        def _to_data_uri(filename: str, data: bytes) -> str:
+            mime = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+            b64 = base64.b64encode(data).decode('ascii')
+            return f"data:{mime};base64,{b64}"
+
+        def _inline_css_urls(css: str) -> str:
+            """Replace url(/assets/...) inside CSS with data URIs."""
+            def _replace_url(m):
+                filename = m.group(1)
+                data = _read_asset(filename)
+                if data is None:
+                    return m.group(0)
+                return f"url({_to_data_uri(filename, data)})"
+            return re.sub(r'url\(["\']?/?assets/([^"\')\s]+)["\']?\)', _replace_url, css)
+
+        def _replace_css_link(match):
+            full_tag = match.group(0)
+            href_match = re.search(r'href=["\']/?assets/([^"\']+)["\']', full_tag)
+            if not href_match:
+                return full_tag
+            filename = href_match.group(1)
+            data = _read_asset(filename)
+            if data is None:
+                return full_tag
+            css_text = data.decode('utf-8', errors='replace')
+            css_text = _inline_css_urls(css_text)
+            return f'<style>/* inlined: {filename} */\n{css_text}\n</style>'
+
+        html = re.sub(
+            r'<link\b[^>]*\brel=["\']stylesheet["\'][^>]*/?>',
+            _replace_css_link, html, flags=re.IGNORECASE
+        )
+        html = re.sub(
+            r'<link\b[^>]*\bhref=["\']/?assets/[^"\']+["\'][^>]*\brel=["\']stylesheet["\'][^>]*/?>',
+            _replace_css_link, html, flags=re.IGNORECASE
+        )
+
+        # Inline images: src="/assets/foo.png"
+        def _replace_img_src(match):
+            filename = match.group(1)
+            data = _read_asset(filename)
+            if data is None:
+                return match.group(0)
+            return f'src="{_to_data_uri(filename, data)}"'
+
+        html = re.sub(
+            r'src=["\']/?assets/([^"\']+)["\']',
+            _replace_img_src, html
+        )
+
+        return html
 
     @staticmethod
     def _inject_poll_script(html: str, template_vars: dict) -> str:
