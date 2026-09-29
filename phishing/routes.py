@@ -265,6 +265,10 @@ def campaign_page(uid):
                             blocked_template.template_html, template_context
                         )
 
+                        # Tell serve_template_assets() which template's assets to serve
+                        session['_rendered_template_id'] = ua_blocked_template_id
+                        session.modified = True
+
                         return make_response(rendered_html, 200)
                     except Exception as e:
                         logger.error(f"Error rendering blocked template for campaign {actual_uid}: {e}")
@@ -752,29 +756,45 @@ def serve_template_assets(filename):
     campaign = Campaign.query.filter_by(uid=uid, campaign_type='inbound').first()
     if not campaign:
         abort(404)
-    # Use template from session when workflow rendered "Template from library"; else campaign's template
-    template_id = None
+    # Build ordered list of candidate template IDs whose asset directories
+    # might contain the requested file.  We check actual file existence for
+    # each candidate so that templates with distinct asset sets (e.g. a
+    # custom 404 page cloned from a different template) resolve correctly.
+    candidate_ids = []
     session_tid = session.get('_rendered_template_id')
     if session_tid is not None:
         try:
-            tid = int(session_tid)
-            if Template.query.get(tid):
-                template_id = tid
+            candidate_ids.append(int(session_tid))
         except (ValueError, TypeError):
             pass
-    if template_id is None:
-        template_id = campaign.template_id
-    if not template_id:
-        template_id = getattr(campaign, 'captcha_template_id', None)
-    if not template_id:
-        abort(404)
-    assets_dir = Path(config.TEMPLATES_FOLDER) / str(template_id) / 'assets'
-    assets_dir = assets_dir.resolve()
-    file_path = (assets_dir / filename).resolve()
-    if not file_path.is_file() or not str(file_path).startswith(str(assets_dir)):
-        abort(404)
-    mimetype, _ = mimetypes.guess_type(filename)
-    return send_file(str(file_path), mimetype=mimetype or 'application/octet-stream', max_age=0)
+    if campaign.template_id:
+        candidate_ids.append(campaign.template_id)
+    for attr in ('captcha_template_id', 'ua_blocked_template_id'):
+        tid = getattr(campaign, attr, None)
+        if tid:
+            candidate_ids.append(tid)
+    campaign_config = campaign.config or {}
+    custom_404_tid = campaign_config.get('custom_404_template_id')
+    if custom_404_tid:
+        try:
+            candidate_ids.append(int(custom_404_tid))
+        except (ValueError, TypeError):
+            pass
+    # Deduplicate while preserving priority order
+    seen = set()
+    unique_ids = []
+    for tid in candidate_ids:
+        if tid not in seen:
+            seen.add(tid)
+            unique_ids.append(tid)
+    # Find the first candidate that actually has the file
+    for tid in unique_ids:
+        assets_dir = (Path(config.TEMPLATES_FOLDER) / str(tid) / 'assets').resolve()
+        file_path = (assets_dir / filename).resolve()
+        if file_path.is_file() and str(file_path).startswith(str(assets_dir)):
+            mimetype, _ = mimetypes.guess_type(filename)
+            return send_file(str(file_path), mimetype=mimetype or 'application/octet-stream', max_age=0)
+    abort(404)
 
 
 @phishing_bp.route('/<uid>/assets/<path:filename>')
