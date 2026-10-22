@@ -5,7 +5,7 @@ from functools import wraps
 from pathlib import Path
 from flask import Blueprint, request, jsonify, g, send_file
 from shared.database import db, Campaign, User, Event, TrackedUser, TrackingEvent, Template, Asset, Setting, Plugin, Workflow, Notification, EmailJob, CallJob, SendingWorkflow, CredentialProxyJob
-from shared.auth import require_auth, get_current_user
+from shared.auth import require_auth, get_current_user, authenticate_user, create_access_token
 from shared.errors import ValidationException, CampaignNotFoundException
 # Removed handler imports - campaigns now use workflows
 from api.models.models import CampaignCreateRequest, CampaignUpdateRequest, TrackedUserRequest, TemplateCreateRequest, TemplateUpdateRequest
@@ -31,9 +31,57 @@ def load_user():
     """Load current user for API requests"""
     pass
 
+# Authentication endpoint (no @require_auth - this IS the auth entry point)
+
+@api_bp.route('/auth/token', methods=['POST'])
+def api_login():
+    """
+    Exchange username/password for a JWT access token
+    ---
+    tags:
+      - Authentication
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - username
+            - password
+          properties:
+            username:
+              type: string
+            password:
+              type: string
+    responses:
+      200:
+        description: JWT token issued
+        schema:
+          type: object
+          properties:
+            access_token:
+              type: string
+            token_type:
+              type: string
+      400:
+        description: Missing credentials
+      401:
+        description: Invalid credentials
+    """
+    data = request.get_json()
+    if not data or 'username' not in data or 'password' not in data:
+        return jsonify({'error': 'username and password required'}), 400
+    user = authenticate_user(data['username'], data['password'])
+    if not user:
+        return jsonify({'error': 'Invalid credentials'}), 401
+    token = create_access_token({"sub": user.id})
+    if not token:
+        return jsonify({'error': 'Token creation failed'}), 500
+    return jsonify({'access_token': token, 'token_type': 'bearer'})
+
+
 # Campaign endpoints
-# Note: GET endpoints are automatically exempt from CSRF by Flask-WTF
-# State-changing operations (POST, PUT, DELETE) require CSRF tokens
 
 @api_bp.route('/campaigns', methods=['GET'])
 

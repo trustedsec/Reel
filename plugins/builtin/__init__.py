@@ -5,6 +5,7 @@ from .slack import SlackPlugin
 from .pushover import PushoverPlugin
 from .aws_connect_dialer import AWSConnectDialerPlugin
 from .graphspy import GraphSpyPlugin
+from .github_device_code import GitHubDeviceCodePlugin
 from .data_transform import DataTransformPlugin
 from .conditional import ConditionalPlugin
 from .delay import DelayPlugin
@@ -31,6 +32,7 @@ __all__ = [
     'PushoverPlugin',
     'AWSConnectDialerPlugin',
     'GraphSpyPlugin',
+    'GitHubDeviceCodePlugin',
     'DataTransformPlugin',
     'ConditionalPlugin',
     'DelayPlugin',

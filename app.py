@@ -119,6 +119,10 @@ def create_admin_app(skip_plugin_sync=False):
     from flask_wtf.csrf import CSRFProtect
     csrf = CSRFProtect()
     csrf.init_app(app)
+    # Exempt API blueprint from CSRF - it uses JWT Bearer auth, not session cookies.
+    # require_auth still enforces authentication on every endpoint.
+    from api.routes import api_bp
+    csrf.exempt(api_bp)
     app.config['WTF_CSRF_ENABLED'] = True
     app.config['WTF_CSRF_TIME_LIMIT'] = None  # No time limit on CSRF tokens
 

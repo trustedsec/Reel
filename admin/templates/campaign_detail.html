@@ -321,6 +321,43 @@
     </div>
     {% endif %}
 
+    <!-- Captured Tokens (inbound only) -->
+    {% if campaign.campaign_type == 'inbound' %}
+    <div id="tokens-section" class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200">
+        <div class="px-4 py-5 sm:p-6">
+            <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white">
+                    <i class="fab fa-github text-purple-500 mr-2"></i>
+                    Captured Tokens (<span id="tokens-count">0</span>)
+                </h3>
+            </div>
+
+            <div id="tokens-empty-state" class="text-center py-8 text-gray-500 dark:text-gray-400">
+                <i class="fas fa-fingerprint text-4xl mb-4"></i>
+                <h4 class="text-sm font-medium text-gray-900 dark:text-white">No tokens captured yet</h4>
+                <p class="text-sm text-gray-500 dark:text-gray-400">OAuth tokens from device code flows will appear here.</p>
+            </div>
+
+            <div id="tokens-table-container" class="overflow-x-auto" style="display: none;">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-700">
+                        <tr>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">GitHub User</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Scopes</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Access Token</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Captured At</th>
+                            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tokens-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Campaign Details -->
     <div class="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg transition-colors duration-200">
         <div class="px-4 py-5 sm:p-6">
@@ -563,6 +600,8 @@
                                         {% if event.event_type == 'page_view' %}bg-blue-500
                                         {% elif event.event_type in ('form_submit', 'form_submitted') %}bg-red-500
                                         {% elif event.event_type == 'credential_captured' %}bg-orange-500
+                                        {% elif event.event_type == 'token_captured' %}bg-purple-500
+                                        {% elif event.event_type == 'device_code_issued' %}bg-cyan-500
                                         {% elif event.event_type == 'phishing_detection' %}bg-indigo-500
                                         {% else %}bg-gray-500{% endif %}">
                                         {% if event.event_type == 'page_view' %}
@@ -571,6 +610,10 @@
                                         <i class="fas fa-paper-plane text-white text-xs"></i>
                                         {% elif event.event_type == 'credential_captured' %}
                                         <i class="fas fa-key text-white text-xs"></i>
+                                        {% elif event.event_type == 'token_captured' %}
+                                        <i class="fas fa-fingerprint text-white text-xs"></i>
+                                        {% elif event.event_type == 'device_code_issued' %}
+                                        <i class="fas fa-qrcode text-white text-xs"></i>
                                         {% elif event.event_type == 'phishing_detection' %}
                                         <i class="fas fa-shield-alt text-white text-xs"></i>
                                         {% else %}
@@ -587,6 +630,10 @@
                                             Form submitted
                                             {% elif event.event_type == 'credential_captured' %}
                                             Credentials captured
+                                            {% elif event.event_type == 'token_captured' %}
+                                            Token captured
+                                            {% elif event.event_type == 'device_code_issued' %}
+                                            Device code issued
                                             {% elif event.event_type == 'phishing_detection' %}
                                             Phishing detection
                                             {% else %}
@@ -1311,18 +1358,26 @@ function loadRecentEvents() {
                 let bgColor = 'bg-gray-500';
                 let eventText = eventType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase());
 
-                if (eventType === 'page_view' || eventType === 'credentials') {
+                if (eventType === 'page_view') {
                     iconClass = 'fa-eye';
                     bgColor = 'bg-blue-500';
                     eventText = 'Page viewed';
-                } else if (eventType === 'form_submit' || eventType === 'credentials') {
+                } else if (eventType === 'form_submit' || eventType === 'form_submitted') {
                     iconClass = 'fa-paper-plane';
                     bgColor = 'bg-red-500';
                     eventText = 'Form submitted';
-                } else if (eventType === 'credential_captured' || eventType === 'credentials') {
+                } else if (eventType === 'credential_captured') {
                     iconClass = 'fa-key';
                     bgColor = 'bg-orange-500';
                     eventText = 'Credentials captured';
+                } else if (eventType === 'token_captured') {
+                    iconClass = 'fa-fingerprint';
+                    bgColor = 'bg-purple-500';
+                    eventText = 'Token captured';
+                } else if (eventType === 'device_code_issued') {
+                    iconClass = 'fa-qrcode';
+                    bgColor = 'bg-cyan-500';
+                    eventText = 'Device code issued';
                 }
 
                 const eventTime = event.created_at ? new Date(event.created_at).toLocaleString('en-US', {
@@ -1524,14 +1579,134 @@ function loadCredentials() {
         });
 }
 
+function loadTokens() {
+    fetch(`/api/campaigns/${CAMPAIGN_ID}/events?event_type=token_captured&per_page=50`)
+        .then(response => response.json())
+        .then(data => {
+            const tableBody = document.getElementById('tokens-table-body');
+            const emptyState = document.getElementById('tokens-empty-state');
+            const tableContainer = document.getElementById('tokens-table-container');
+            const countSpan = document.getElementById('tokens-count');
+
+            if (!tableBody) return;
+
+            const tokens = (data.events || []);
+            if (countSpan) countSpan.textContent = tokens.length;
+
+            if (tokens.length === 0) {
+                if (emptyState) emptyState.style.display = '';
+                if (tableContainer) tableContainer.style.display = 'none';
+                return;
+            }
+
+            if (emptyState) emptyState.style.display = 'none';
+            if (tableContainer) tableContainer.style.display = '';
+            tableBody.replaceChildren();
+
+            tokens.forEach(event => {
+                const d = event.data || {};
+                const ghUser = d.github_user || {};
+                const login = ghUser.login || d.email || 'unknown';
+                const email = ghUser.email || d.email || '';
+                const scopes = d.scopes || '';
+                const accessToken = d.access_token || '';
+                const timestamp = event.created_at
+                    ? new Date(event.created_at).toLocaleString('en-US', {
+                        month: 'short', day: 'numeric',
+                        hour: 'numeric', minute: '2-digit', hour12: true
+                    })
+                    : '';
+
+                const tr = document.createElement('tr');
+
+                // GitHub User
+                const userTd = document.createElement('td');
+                userTd.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white';
+                if (ghUser.html_url) {
+                    const a = document.createElement('a');
+                    a.href = ghUser.html_url;
+                    a.target = '_blank';
+                    a.rel = 'noopener noreferrer';
+                    a.className = 'text-blue-600 dark:text-blue-400 hover:underline';
+                    a.textContent = login;
+                    userTd.appendChild(a);
+                } else {
+                    userTd.textContent = login;
+                }
+
+                // Email
+                const emailTd = document.createElement('td');
+                emailTd.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400';
+                emailTd.textContent = email;
+
+                // Scopes
+                const scopesTd = document.createElement('td');
+                scopesTd.className = 'px-6 py-4 text-sm text-gray-500 dark:text-gray-400';
+                scopesTd.style.maxWidth = '200px';
+                scopesTd.style.overflow = 'hidden';
+                scopesTd.style.textOverflow = 'ellipsis';
+                scopesTd.title = scopes;
+                scopesTd.textContent = scopes;
+
+                // Access Token (masked with reveal toggle)
+                const tokenTd = document.createElement('td');
+                tokenTd.className = 'px-6 py-4 whitespace-nowrap';
+                const tokenWrap = document.createElement('div');
+                tokenWrap.className = 'text-sm text-gray-900 dark:text-white';
+                const tokenDisplay = document.createElement('span');
+                tokenDisplay.className = 'password-display';
+                const tokenMasked = document.createElement('span');
+                tokenMasked.className = 'password-masked';
+                tokenMasked.textContent = accessToken ? accessToken.slice(0, 8) + '••••••••' : '';
+                const tokenVisible = document.createElement('span');
+                tokenVisible.className = 'password-visible hidden';
+                tokenVisible.textContent = accessToken;
+                tokenDisplay.append(tokenMasked, tokenVisible);
+                const toggleBtn = document.createElement('button');
+                toggleBtn.className = 'ml-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 text-xs';
+                toggleBtn.addEventListener('click', () => togglePassword(toggleBtn));
+                const toggleIcon = document.createElement('i');
+                toggleIcon.className = 'fas fa-eye';
+                toggleBtn.appendChild(toggleIcon);
+                tokenWrap.append(tokenDisplay, toggleBtn);
+                tokenTd.appendChild(tokenWrap);
+
+                // Captured At
+                const tsTd = document.createElement('td');
+                tsTd.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400';
+                tsTd.textContent = timestamp;
+
+                // Actions
+                const actionsTd = document.createElement('td');
+                actionsTd.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
+                const copyTokenBtn = document.createElement('button');
+                copyTokenBtn.className = 'text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300';
+                copyTokenBtn.title = 'Copy token';
+                copyTokenBtn.addEventListener('click', () => copyCredential(accessToken, 'token'));
+                const copyIcon = document.createElement('i');
+                copyIcon.className = 'fas fa-copy';
+                copyTokenBtn.appendChild(copyIcon);
+                actionsTd.appendChild(copyTokenBtn);
+
+                tr.append(userTd, emailTd, scopesTd, tokenTd, tsTd, actionsTd);
+                tableBody.appendChild(tr);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading tokens:', error);
+        });
+}
+
 // Load events on page load and set up auto-refresh
 document.addEventListener('DOMContentLoaded', function() {
     loadRecentEvents();
     loadCredentials();
+    loadTokens();
     loadLiveSessionBadge();
     // Auto-refresh every 30 seconds
     setInterval(loadRecentEvents, 30000);
     setInterval(loadCredentials, 30000);
+    setInterval(loadTokens, 30000);
     setInterval(loadLiveSessionBadge, 10000);
 });
 
